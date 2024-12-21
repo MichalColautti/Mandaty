@@ -6,8 +6,9 @@ import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.stage.Stage;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.io.*;
+import java.net.Socket;
+import java.util.Objects;
 
 /**
  * Główna klasa aplikacji do wystawiania mandatów przez policję.
@@ -19,12 +20,6 @@ public class PoliceTicketApp extends Application {
      * Główne okno aplikacji, używane do wyświetlania różnych widoków w aplikacji.
      */
     private Stage mainStage;
-
-    /**
-     * Tymczasowa mapa przechowująca użytkowników aplikacji, gdzie kluczem jest numer służbowy,a wartością jest hasło.
-     * Używana do testowania uwierzytelniania użytkowników.
-     */
-    private final Map<String, String> users = new HashMap<>();
 
     /**
      * Metoda główna aplikacji, która uruchamia aplikację JavaFX.
@@ -41,8 +36,6 @@ public class PoliceTicketApp extends Application {
      */
     @Override
     public void start(Stage primaryStage) {
-        addTestUsers();
-
         this.mainStage = primaryStage;
         primaryStage.setTitle("Aplikacja Policjanta");
 
@@ -50,17 +43,10 @@ public class PoliceTicketApp extends Application {
     }
 
     /**
-     * Dodaje testowych użytkowników do wewnętrznej mapy użytkowników.
-     */
-    private void addTestUsers() {
-        users.put("123456","password");
-        users.put("111111","kappa");
-    }
-
-    /**
      * Ustawia grid, ustawia padding oraz odległośći między rzędami i kolumnami.
      * Dodaje pola przyjmujące login i hasło oraz przycisk zaloguj.
      * Jeśli wprowadzony login i hasło będzie poprawne pokazuje scenę do wystawiania mandatu.
+     * Jeśli wprowadzony login lub hasło będzie puste pokazuje powiadomienie aby uzupełnić pola
      * Jeśli wprowadzony login i hasło nie będzie poprawne pokazuje powiadomienie, że wprowadzony został nieprawidłowy login lub hasło.
      */
     private void loginScene() {
@@ -94,11 +80,15 @@ public class PoliceTicketApp extends Application {
         loginButton.setOnAction(e -> {
             String serviceNumber = serviceNumberInput.getText();
             String password = passwordInput.getText();
-
-            if (authenticate(serviceNumber, password)) {
-                ticketScene();
-            } else {
-                showAlert("Błąd logowania", "Nieprawidłowy numer służbowy lub hasło.");
+            if(Objects.equals(serviceNumber, "") || Objects.equals(password, "")) {
+                showAlert("Błąd logowania", "Pola nie mogą być puste.");
+            }
+            else {
+                if (authenticate(serviceNumber, password)) {
+                    ticketScene();
+                } else {
+                    showAlert("Błąd logowania", "Nieprawidłowy numer służbowy lub hasło.");
+                }
             }
         });
 
@@ -164,24 +154,30 @@ public class PoliceTicketApp extends Application {
     }
 
     /**
-     * funkcja sprawdza czy podany login i hasło są poprawne
+     * funkcja wysyła do serwera login i hasło i czeka na ocene czy są poprawne
      *
      * @param serviceNumber numer policjanta (login)
      * @param password hasło
      * @return zwraca false dla niepoprawnych danych logowania lub true dla poprawnych
      */
     private boolean authenticate(String serviceNumber, String password) {
-        if(!users.containsKey(serviceNumber)) {
-            System.out.println("Database doesn't contain serviceNumber");
-            users.forEach((num,pass) -> System.out.println("serviceNumber: " + num + " password: " + pass));
-            return false;
-        }
-        if(!users.get(serviceNumber).equals(password)) {
-            System.out.println("Wrong password");
-            return false;
-        }
+        try (Socket socket = new Socket("192.168.1.55", 12345);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-        return true;
+            // Wysyłanie danych logowania
+            String loginData = serviceNumber + "," + password;
+            out.println(loginData);
+
+            // Odbieranie odpowiedzi z serwera
+            String response = in.readLine();
+            System.out.println("Odpowiedź z serwera: " + response);
+
+            return response.contains("true");
+        } catch (IOException e) {
+            System.out.println("Błąd komunikacji z serwerem: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
