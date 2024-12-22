@@ -15,3 +15,6 @@ CREATE TABLE tickets (
     issue_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (issued_by) REFERENCES users (id)
 );
+
+--insert into users values (1,'123nypd','pass');
+--select * from tickets;

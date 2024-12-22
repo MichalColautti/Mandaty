@@ -22,6 +22,11 @@ public class PoliceTicketApp extends Application {
     private Stage mainStage;
 
     /**
+     * Zmienna przechowywująca numer służbowy policjanta.
+     */
+    private String serviceNumber;
+
+    /**
      * Metoda główna aplikacji, która uruchamia aplikację JavaFX.
      */
     public static void main(String[] args) {
@@ -78,8 +83,10 @@ public class PoliceTicketApp extends Application {
         GridPane.setHalignment(loginButton, HPos.RIGHT);
 
         loginButton.setOnAction(e -> {
-            String serviceNumber = serviceNumberInput.getText();
+            serviceNumber = serviceNumberInput.getText();
             String password = passwordInput.getText();
+
+            // Jeśli pole z loginem lub hasłem jest puste to wysyła powiadomienie jeśli są wypełnione to próbuje się zalogować
             if(Objects.equals(serviceNumber, "") || Objects.equals(password, "")) {
                 showAlert("Błąd logowania", "Pola nie mogą być puste.");
             }
@@ -100,7 +107,7 @@ public class PoliceTicketApp extends Application {
 
     /**
      * Dla okna od wystawiania mandatów ustawia grid, ustawia padding oraz odległośći między rzędami i kolumnami.
-     * Dodaje pola przyjmujące dane kierowcy, wykroczenie, kwote mandatu i ilość punktów karnych.
+     * Dodaje pola przyjmujące dane kierowcy, pesel, wykroczenie, kwote mandatu i ilość punktów karnych.
      * Jeśli uda się wypisać mandat to pokazuje powiadomienie o sukcesie operacji.
      * Jeśli nie uda się wypisać mandatu to pokazuje powiadomienie o porażce operacji.
      */
@@ -112,6 +119,9 @@ public class PoliceTicketApp extends Application {
 
         Label driverLabel = new Label("Dane kierowcy:");
         TextField driverInput = new TextField();
+
+        Label peselLabel = new Label("Pesel kierowcy:");
+        TextField peselInput = new TextField();
 
         Label offenseLabel = new Label("Wykroczenie:");
         TextField offenseInput = new TextField();
@@ -126,29 +136,37 @@ public class PoliceTicketApp extends Application {
 
         ticketFormLayout.add(driverLabel, 0, 0);
         ticketFormLayout.add(driverInput, 1, 0);
-        ticketFormLayout.add(offenseLabel, 0, 1);
-        ticketFormLayout.add(offenseInput, 1, 1);
-        ticketFormLayout.add(fineLabel, 0, 2);
-        ticketFormLayout.add(fineInput, 1, 2);
-        ticketFormLayout.add(penaltyPointsLabel, 0, 3);
-        ticketFormLayout.add(penaltyPointsInput, 1, 3);
-        ticketFormLayout.add(submitTicketButton, 1, 4);
+        ticketFormLayout.add(peselLabel, 0, 1);
+        ticketFormLayout.add(peselInput, 1, 1);
+        ticketFormLayout.add(offenseLabel, 0, 2);
+        ticketFormLayout.add(offenseInput, 1, 2);
+        ticketFormLayout.add(fineLabel, 0, 3);
+        ticketFormLayout.add(fineInput, 1, 3);
+        ticketFormLayout.add(penaltyPointsLabel, 0, 4);
+        ticketFormLayout.add(penaltyPointsInput, 1, 4);
+        ticketFormLayout.add(submitTicketButton, 1, 5);
         GridPane.setHalignment(submitTicketButton, HPos.RIGHT);
 
         submitTicketButton.setOnAction(e -> {
             String driver = driverInput.getText();
+            String pesel = peselInput.getText();
             String offense = offenseInput.getText();
             String fine = fineInput.getText();
             String penaltyPoints = penaltyPointsInput.getText();
 
-            if (submitTicket(driver, offense, fine, penaltyPoints)) {
-                showAlert("Sukces", "Mandat został wystawiony.");
-            } else {
-                showAlert("Błąd", "Wystąpił problem podczas wystawiania mandatu.");
+            if(driver.isEmpty() || pesel.isEmpty() || offense.isEmpty() || fine.isEmpty() || penaltyPoints.isEmpty()) {
+                showAlert("Błąd wystawiania mandatu", "Pola nie mogą być puste.");
+            }
+            else {
+                if (submitTicket(driver, pesel, offense, fine, penaltyPoints)) {
+                    showAlert("Sukces", "Mandat został wystawiony.");
+                } else {
+                    showAlert("Błąd", "Wystąpił problem podczas wystawiania mandatu.");
+                }
             }
         });
 
-        Scene ticketScene = new Scene(ticketFormLayout, 280, 200);
+        Scene ticketScene = new Scene(ticketFormLayout, 280, 220);
         mainStage.setScene(ticketScene);
         mainStage.show();
     }
@@ -165,8 +183,8 @@ public class PoliceTicketApp extends Application {
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-            // Wysyłanie danych logowania
-            String loginData = serviceNumber + "," + password;
+            // Wysyłanie danych logowania, na początku auth aby serwer wiedział ze chodzi o autoryzację
+            String loginData = "auth," + serviceNumber + "," + password;
             out.println(loginData);
 
             // Odbieranie odpowiedzi z serwera
@@ -181,21 +199,33 @@ public class PoliceTicketApp extends Application {
     }
 
     /**
-     * Funkcja wypisuje dane na które ma zostać wypisany mandat
+     * Funkcja wysyła do serwera dane na które ma zostać wystawiony mandat
      *
      * @param driver dane kierowcy
+     * @param pesel pesel kierowcy
      * @param offense wykroczenie popełnione
      * @param fine grzywna
      * @param penaltyPoints ilość punktów karnych
-     * @return true ponieważ narazie nie może się niepowieść
+     * @return true jeśli uda się wstawić dane do bazy danych, false jeśli się nie uda
      */
-    private boolean submitTicket(String driver, String offense, String fine, String penaltyPoints) {
-        System.out.println("Dane mandatu:");
-        System.out.println("Kierowca: " + driver);
-        System.out.println("Wykroczenie: " + offense);
-        System.out.println("Kwota: " + fine);
-        System.out.println("Punkty karne: " + penaltyPoints);
-        return true;
+    private boolean submitTicket(String driver, String pesel, String offense, String fine, String penaltyPoints) {
+        try (Socket socket = new Socket("192.168.1.55", 12345);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+            // Wysyłanie danych logowania, na początku ticket aby serwer wiedział ze chodzi o wystawienie mandatu
+            String loginData = "ticket," + driver + "," + pesel + "," + offense + "," + fine + "," + penaltyPoints + "," + serviceNumber;
+            out.println(loginData);
+
+            // Odbieranie odpowiedzi z serwera
+            String response = in.readLine();
+            System.out.println("Odpowiedź z serwera: " + response);
+
+            return response.contains("true");
+        } catch (IOException e) {
+            System.out.println("Błąd komunikacji z serwerem: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
