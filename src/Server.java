@@ -8,8 +8,10 @@ import java.sql.*;
 public class Server {
     /**
      * Metoda łączy się z bazą danych na odzielnej maszynie poprzez udostępniany w sieci folder
-     * po czym wświetla wszystkie rekordy z tabeli users
-     * narazie obsługuje tylko authenticate dla aplikacji policjanta
+     * po czym wświetla wszystkie rekordy z tabeli users.
+     * Pobiera linie od aplikacji policjanta i rozpoznaje czy policjant chce się zalogować czy chce wystawić mandat.
+     * Jeżeli zalogować to sprawdza czy dane istnieją w bazie danych.
+     * Jeżeli wystawić mandat to wystawia mandat.
      */
     public static void main(String[] args) {
         String dbURL = "jdbc:sqlite:Z:/identifier.sqlite";
@@ -45,20 +47,45 @@ public class Server {
 
                             // Sprawdzanie danych logowania
                             String[] credentials = request.split(",");
-                            String serviceNumber = credentials[0];
-                            String password = credentials[1];
 
-                            boolean authenticated = authenticate(connection,serviceNumber, password);
+                            String serviceNumber;
+                            switch (credentials[0]) {
+                                case "auth":
+                                    serviceNumber = credentials[1];
+                                    String password = credentials[2];
+                                    boolean authenticated = authenticate(connection,serviceNumber, password);
 
-                            // Odpowiedź
-                            if( authenticated) {
-                                String response = "true";
-                                out.println(response);
+                                    // Odpowiedź
+                                    if( authenticated) {
+                                        String response = "true";
+                                        out.println(response);
+                                    }
+                                    else {
+                                        String response = "false";
+                                        out.println(response);
+                                    }
+                                    break;
+                                case "ticket":
+                                    String driver = credentials[1];
+                                    String pesel = credentials[2];
+                                    String offense = credentials[3];
+                                    String fine = credentials[4];
+                                    String penaltyPoints = credentials[5];
+                                    serviceNumber = credentials[6];
+                                    boolean ticket = create_ticket(connection, pesel,driver, offense, fine, penaltyPoints, serviceNumber);
+
+                                    // Odpowiedź
+                                    if(ticket) {
+                                        String response = "true";
+                                        out.println(response);
+                                    }
+                                    else {
+                                        String response = "false";
+                                        out.println(response);
+                                    }
+                                    break;
                             }
-                            else {
-                                String response = "false";
-                                out.println(response);
-                            }
+
                         } catch (IOException e) {
                             System.out.println("Błąd podczas komunikacji z klientem: " + e.getMessage());
                         }
@@ -91,6 +118,37 @@ public class Server {
                 if(rs.next()) {
                     return true;
                 }
+            }
+        } catch (SQLException e) {
+            System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * @param connection miejsce pliku z bazą danych
+     * @param driver imię kierowcy
+     * @param pesel pesel kierowcy
+     * @param offense wykroczenie popełnione
+     * @param fine grzywna
+     * @param penaltyPoints ilość punktów karnych
+     * @param serviceNumber numer służbowy policjanta
+     * @return zwraca true jeżeli uda się zinsertować dane do bazy danych jeżeli się nie uda zwraca false
+     */
+    private static boolean create_ticket(Connection connection, String driver,String pesel, String offense, String fine, String penaltyPoints, String serviceNumber) {
+        String query = "INSERT INTO tickets (driver_name, pesel, offense, fine_amount, penalty_points,issued_by) values (?,?,?,?,?,?)";
+
+        try (PreparedStatement statement = connection.prepareStatement(query)) {
+            statement.setString(1, driver);
+            statement.setString(2, pesel);
+            statement.setString(3, offense);
+            statement.setString(4, fine);
+            statement.setString(5, penaltyPoints);
+            statement.setString(6, serviceNumber);
+
+            int rows = statement.executeUpdate();
+            if(rows > 0) {
+                return true;
             }
         } catch (SQLException e) {
             System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
