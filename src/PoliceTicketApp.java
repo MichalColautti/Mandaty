@@ -288,9 +288,6 @@ public class PoliceTicketApp extends Application {
                 if (isRecidivist.equals("Tak") && offense.getRecidivist()) {
                     fineInt *= 2;
                 }
-                fine = Integer.toString(fineInt);
-                System.out.println(fine + " " + fineInt + " " + offense.getRecidivist() + " " + isRecidivist);
-
                 int penaltyPointsInt = Integer.parseInt(penaltyPoints);
 
                 //sprawdzenie czy długość peselu zgadza się
@@ -318,6 +315,7 @@ public class PoliceTicketApp extends Application {
                     }
                 }
                 else {
+                    fine = Integer.toString(fineInt);
                     //jeśli wszystkie pola są poprawnie wypełnione to wysyła dane do serwera
                     if (submitTicket(driver, pesel, selectedOffense, fine, penaltyPoints)) {
                         showAlert("Sukces", "Mandat został wystawiony.");
