@@ -14,8 +14,8 @@ public class Server {
      * Jeżeli wystawić mandat to wystawia mandat.
      */
     public static void main(String[] args) {
-        String dbURL = "jdbc:sqlite:Z:/identifier.sqlite";
-
+        //String dbURL = "jdbc:sqlite:Z:/identifier.sqlite";
+        String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
         try {
             Connection connection = DriverManager.getConnection(dbURL);
 
