@@ -73,11 +73,11 @@ public class Server {
                                     String fine = credentials[4];
                                     String penaltyPoints = credentials[5];
                                     serviceNumber = credentials[6];
-                                    boolean ticket = createTicket(connection, pesel,driver, offense, fine, penaltyPoints, serviceNumber);
+                                    int createdTicketId = createTicket(connection, pesel,driver, offense, fine, penaltyPoints, serviceNumber);
 
                                     // Odpowiedź
-                                    if(ticket) {
-                                        String response = "true";
+                                    if(createdTicketId > 0) {
+                                        String response = "true," + createdTicketId;
                                         out.println(response);
                                     }
                                     else {
@@ -153,7 +153,7 @@ public class Server {
      * @param serviceNumber numer służbowy policjanta
      * @return zwraca true, jeżeli uda się zinsertować dane do bazy danych, jeżeli się nie uda zwraca false
      */
-    private static boolean createTicket(Connection connection, String driver, String pesel, String offense, String fine, String penaltyPoints, String serviceNumber) {
+    private static int createTicket(Connection connection, String driver, String pesel, String offense, String fine, String penaltyPoints, String serviceNumber) {
         String query = "INSERT INTO tickets (driver_name, pesel, offense, fine_amount, penalty_points,issued_by) values (?,?,?,?,?,?)";
 
         try (PreparedStatement statement = connection.prepareStatement(query)) {
@@ -166,12 +166,16 @@ public class Server {
 
             int rows = statement.executeUpdate();
             if(rows > 0) {
-                return true;
+                try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        return generatedKeys.getInt(1); // Zwraca ID mandatu
+                    }
+                }
             }
         } catch (SQLException e) {
             System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
         }
-        return false;
+        return -1;
     }
 
     /**
@@ -179,7 +183,7 @@ public class Server {
      *
      * @param connection miejsce pliku z bazą danych
      * @param id id mandatu do anulowania
-     * @return True, jeśli powiedzie się anulowanie mandatu. False, jeśli się nie powiedzie.
+     * @return True, jeśli powiedzie się anulowanie mandatu, false, jeśli się nie powiedzie.
      */
     private static boolean cancelTicket(Connection connection, String id) {
         String query = "DELETE FROM tickets WHERE id = ?";
