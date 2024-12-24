@@ -252,6 +252,8 @@ public class PoliceTicketApp extends Application {
             return null; //jeśli podany znak nie jest intem to go nie wpisuje
         }));
 
+        Button goToCancelTicketButton = new Button("Anuluj mandat");
+        goToCancelTicketButton.setPrefWidth(150);
         Button submitTicketButton = new Button("Wystaw mandat");
 
         ticketFormLayout.add(driverLabel, 0, 0);
@@ -266,8 +268,13 @@ public class PoliceTicketApp extends Application {
         ticketFormLayout.add(isRecidivistInput, 1, 4);
         ticketFormLayout.add(penaltyPointsLabel, 0, 5);
         ticketFormLayout.add(penaltyPointsInput, 1, 5);
+        ticketFormLayout.add(goToCancelTicketButton, 0, 6);
         ticketFormLayout.add(submitTicketButton, 1, 6);
         GridPane.setHalignment(submitTicketButton, HPos.RIGHT);
+
+        goToCancelTicketButton.setOnAction(e -> {
+            cancelTicketScene();
+        });
 
         submitTicketButton.setOnAction(e -> {
             String driver = driverInput.getText();
@@ -284,10 +291,6 @@ public class PoliceTicketApp extends Application {
                 Offense offense = offenses.get(selectedOffense);
                 int fineInt = Integer.parseInt(fine);
 
-                //jeśli kierowca jest recydywistą i wykroczenie podlega recydywie dwuktornie zwiększa wysokość mandatu.
-                if (isRecidivist.equals("Tak") && offense.getRecidivist()) {
-                    fineInt *= 2;
-                }
                 int penaltyPointsInt = Integer.parseInt(penaltyPoints);
 
                 //sprawdzenie czy długość peselu zgadza się
@@ -315,13 +318,13 @@ public class PoliceTicketApp extends Application {
                     }
                 }
                 else {
+                    //jeśli kierowca jest recydywistą i wykroczenie podlega recydywie dwuktornie zwiększa wysokość mandatu.
+                    if (isRecidivist.equals("Tak") && offense.getRecidivist()) {
+                        fineInt *= 2;
+                    }
                     fine = Integer.toString(fineInt);
                     //jeśli wszystkie pola są poprawnie wypełnione to wysyła dane do serwera
-                    if (submitTicket(driver, pesel, selectedOffense, fine, penaltyPoints)) {
-                        showAlert("Sukces", "Mandat został wystawiony.");
-                    } else {
-                        showAlert("Błąd", "Wystąpił problem podczas wystawiania mandatu.");
-                    }
+                    submitTicket(driver, pesel, selectedOffense, fine, penaltyPoints);
                 }
             }
         });
@@ -406,8 +409,99 @@ public class PoliceTicketApp extends Application {
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
             // Wysyłanie danych logowania, na początku ticket aby serwer wiedział ze chodzi o wystawienie mandatu
-            String loginData = "ticket," + driver + "," + pesel + "," + offense + "," + fine + "," + penaltyPoints + "," + serviceNumber;
-            out.println(loginData);
+            String ticketData = "ticket," + driver + "," + pesel + "," + offense + "," + fine + "," + penaltyPoints + "," + serviceNumber;
+            out.println(ticketData);
+
+            // Odbieranie odpowiedzi z serwera
+            String response = in.readLine();
+            String[] parts = response.split(",");
+            System.out.println("Odpowiedź z serwera: " + response);
+            if(response.startsWith("true")) {
+                showAlert("Sukces", "Mandat o id: " + parts[1] + " został wystawiony.");
+                return true;
+            }
+            else {
+                showAlert("Błąd", "Wystąpił problem podczas wystawiania mandatu.");
+                return false;
+            }
+        } catch (IOException e) {
+            System.out.println("Błąd komunikacji z serwerem: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Dla okna od anulowania mandatów ustawia grid, ustawia padding oraz odległośći między rzędami i kolumnami.
+     * Dodaje pola przyjmujące id mandatu.
+     * W polu id mandatu program pozwala na wpisywanie tylko liczb.
+     * Program sprawdza czy pole id mandatu jest puste jeśli tak to wyświetla powiadomienie z uwagą o wypełnieniu go.
+     * Jeśli uda się anulować mandat to pokazuje powiadomienie o sukcesie operacji.
+     * Jeśli nie uda się anulować mandatu to pokazuje powiadomienie o porażce operacji.
+     */
+    private void cancelTicketScene() {
+        GridPane cancelTicketFormLayout = new GridPane();
+        cancelTicketFormLayout.setPadding(new Insets(10));
+        cancelTicketFormLayout.setHgap(10);
+        cancelTicketFormLayout.setVgap(10);
+
+        Label ticketIdLabel = new Label("Id mandatu:");
+        TextField ticketIdInput = new TextField();
+        //niepozwolenie na wpisanie czegoś innego niż intów
+        ticketIdInput.setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            if (newText.matches("\\d*")) { //jeśli podany znak jest intem to wpisuje
+                return change;
+            }
+            return null; //jeśli podany znak nie jest intem to go nie wpisuje
+        }));
+
+        Button cancelTicketButton = new Button("Anuluj mandat");
+        Button goBackButton = new Button("Powrót");
+
+        cancelTicketFormLayout.add(ticketIdLabel, 0, 0);
+        cancelTicketFormLayout.add(ticketIdInput, 1, 0);
+        cancelTicketFormLayout.add(goBackButton, 0, 1);
+        cancelTicketFormLayout.add(cancelTicketButton, 1, 1);
+        GridPane.setHalignment(cancelTicketButton, HPos.RIGHT);
+
+        goBackButton.setOnAction(e -> {
+            ticketScene();
+        });
+
+        cancelTicketButton.setOnAction(e -> {
+            String id = ticketIdInput.getText();
+            if(id.isEmpty()) {
+                showAlert("Błąd anulowania mandatu", "Pola nie mogą być puste.");
+            }
+            else {
+                if(cancelTicket(id)) {
+                    showAlert("Sukces", "Mandat został anulowany.");
+                }
+                else {
+                    showAlert("Błąd", "Wystąpił problem podczas anulowania mandatu.");
+                }
+            }
+        });
+
+        Scene cancelTicketScene = new Scene(cancelTicketFormLayout, 250, 90);
+        mainStage.setScene(cancelTicketScene);
+        mainStage.show();
+    }
+
+    /**
+     * Funkcja wysyła do serwera id mandatu który ma być anulowany.
+     *
+     * @param id id mandatu do anulowania
+     * @return zwraca true, jeżeli uda się anulować mandat, false, jeżeli się nie powiedzie
+     */
+    private boolean cancelTicket(String id) {
+        try (Socket socket = new Socket("192.168.1.55", 12345);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+            // na początku cancel aby serwer wiedział ze chodzi o anulowanie mandatu
+            String cancelData = "cancel," + id;
+            out.println(cancelData);
 
             // Odbieranie odpowiedzi z serwera
             String response = in.readLine();
