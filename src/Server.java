@@ -73,7 +73,7 @@ public class Server {
                                     String fine = credentials[4];
                                     String penaltyPoints = credentials[5];
                                     serviceNumber = credentials[6];
-                                    int createdTicketId = createTicket(connection, pesel,driver, offense, fine, penaltyPoints, serviceNumber);
+                                    int createdTicketId = createTicket(connection, driver, pesel, offense, fine, penaltyPoints, serviceNumber);
 
                                     // Odpowiedź
                                     if(createdTicketId > 0) {
