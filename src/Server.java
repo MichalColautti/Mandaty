@@ -1,6 +1,18 @@
+import com.sun.net.httpserver.HttpServer;
+
 import java.io.*;
 import java.net.*;
 import java.sql.*;
+import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpExchange;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 
 /**
  * klasa będąca serwerem
@@ -14,6 +26,13 @@ public class Server {
      * Jeżeli wystawić mandat to wystawia mandat.
      */
     public static void main(String[] args) {
+        try{
+            start_http();
+        }catch (IOException e){
+            System.out.println("Błąd uruchomienia serwera hhtp: " + e.getMessage());
+        }
+
+
         //String dbURL = "jdbc:sqlite:Z:/identifier.sqlite";
         String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
         try {
@@ -99,6 +118,64 @@ public class Server {
         }
     }
 
+
+    private static void start_http() throws IOException{
+        // Tworzenie serwera na porcie 8080
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+
+        // Dodanie kontekstu dla strony głównej
+        server.createContext("/", new HtmlFileHandler());
+        server.createContext("/css", new StaticFileHandler("src/klient/css"));
+        server.createContext("/js", new StaticFileHandler("src/klient/js"));
+
+        // Uruchomienie serwera
+        server.setExecutor(null); // Domyślny executor
+        server.start();
+        System.out.println("Serwer działa na porcie 8080...");
+
+    }
+
+    static class HtmlFileHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            byte[] response = Files.readAllBytes(Paths.get("src/klient/html/index.html"));
+
+            exchange.getResponseHeaders().add("Content-Type", "text/html; charset=UTF-8");
+            exchange.sendResponseHeaders(200, response.length);
+            OutputStream os = exchange.getResponseBody();
+            os.write(response);
+            os.close();
+        }
+    }
+
+    // Handler dla plików statycznych (CSS, JS)
+    static class StaticFileHandler implements HttpHandler {
+        private final String basePath;
+
+        public StaticFileHandler(String basePath) {
+            this.basePath = basePath;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String filePath = basePath + exchange.getRequestURI().getPath().replaceFirst("/(css|js)", "");
+            if (Files.exists(Paths.get(filePath))) {
+                String contentType = filePath.endsWith(".css") ? "text/css" :
+                        filePath.endsWith(".js") ? "application/javascript" : "application/octet-stream";
+
+                byte[] response = Files.readAllBytes(Paths.get(filePath));
+                exchange.getResponseHeaders().add("Content-Type", contentType + "; charset=UTF-8");
+                exchange.sendResponseHeaders(200, response.length);
+                OutputStream os = exchange.getResponseBody();
+                os.write(response);
+                os.close();
+            } else {
+                exchange.sendResponseHeaders(404, -1); // Plik nie znaleziony
+            }
+        }
+    }
+
+
     /**
      * Funkcja sprawdzająca dane logowania czy znajdują się w bazie danych
      * @param connection miejsce pliku z bazą danych
@@ -106,6 +183,7 @@ public class Server {
      * @param password hasło policjanta
      * @return zwraca true jeśli podane dane znajduja się w bazie danych lub false jeśli się nie znajdują w bazie danych
      */
+
     private static boolean authenticate(Connection connection, String serviceNumber, String password) {
         String query = "SELECT * FROM users WHERE service_number = ? AND password = ?";
 
