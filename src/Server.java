@@ -1,12 +1,9 @@
-import com.sun.net.httpserver.HttpServer;
-
 import java.io.*;
 import java.net.*;
 import java.sql.*;
-import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
-
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -53,9 +50,20 @@ public class Server {
                     System.out.println(id + " | " + serviceNumber + " | " + password);
                 }
 
+                rs = stmt.executeQuery("SELECT * FROM driver");
+
+                System.out.println("ID | Pesel | Password");
+
+                while (rs.next()) {
+                    int id = rs.getInt("id");
+                    String pesel = rs.getString("pesel");
+                    String password = rs.getString("password");
+                    System.out.println(id + " | " + pesel + " | " + password);
+                }
+
                 //uruchamianie serwera
                 try (ServerSocket serverSocket = new ServerSocket(12345)) {
-                    System.out.println("Serwer uruchomiony na porcie " + 12345);
+                    System.out.println("Serwer JavaFx uruchomiony na porcie " + 12345);
                     while (true) {
                         try (Socket clientSocket = serverSocket.accept();
                              BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
@@ -127,11 +135,10 @@ public class Server {
         server.createContext("/", new HtmlFileHandler());
         server.createContext("/css", new StaticFileHandler("src/klient/css"));
         server.createContext("/js", new StaticFileHandler("src/klient/js"));
-
-        // Uruchomienie serwera
+        server.createContext("/image", new StaticFileHandler("src/klient/image"));
         server.setExecutor(null); // Domyślny executor
         server.start();
-        System.out.println("Serwer działa na porcie 8080...");
+        System.out.println("Serwer http działa na porcie 8080");
 
     }
 
@@ -158,14 +165,21 @@ public class Server {
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String filePath = basePath + exchange.getRequestURI().getPath().replaceFirst("/(css|js)", "");
-            if (Files.exists(Paths.get(filePath))) {
-                String contentType = filePath.endsWith(".css") ? "text/css" :
-                        filePath.endsWith(".js") ? "application/javascript" : "application/octet-stream";
+            String requestedPath = exchange.getRequestURI().getPath();
+            String filePath = basePath + requestedPath.replaceFirst("/(css|js|image)", "");
 
-                byte[] response = Files.readAllBytes(Paths.get(filePath));
+            File file = new File(filePath);
+            if (file.exists() && !file.isDirectory()) {
+                // Określ odpowiedni typ MIME
+                String contentType = Files.probeContentType(file.toPath());
+                if (contentType == null) {
+                    contentType = "application/octet-stream"; // Domyślny typ
+                }
+
+                byte[] response = Files.readAllBytes(file.toPath());
                 exchange.getResponseHeaders().add("Content-Type", contentType + "; charset=UTF-8");
                 exchange.sendResponseHeaders(200, response.length);
+
                 OutputStream os = exchange.getResponseBody();
                 os.write(response);
                 os.close();

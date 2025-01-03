@@ -3,14 +3,21 @@ body {
     background-color: #f8f9fa; /* Jasne tło dla lepszej czytelności */
     font-family: 'Arial', sans-serif;
 }
+.favicon {
+    width: 32px; /* Ustaw rozmiar ikony */
+    height: 32px;
+    border-radius: 50%; /* Zaokrąglenie, tworzy efekt okręgu */
+}
+
+
 
 .card {
     border-radius: 10px; /* Zaokrąglone krawędzie */
 }
 
 .btn-primary {
-    background-color: #007bff;
-    border-color: #007bff;
+    background-color: #bbb9b9;
+    border-color: #9a9a9a;
 }
 
 .btn-primary:hover {
