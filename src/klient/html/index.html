@@ -11,13 +11,17 @@
     <!-- Bootstrap JS -->
     <script src="../js/bootstrap.bundle.js"></script>
     <!--Logo-->
-    <link rel="icon" href="../image/logo-removebg.png" type="image/png">
+    <link rel="icon" href="/image/logo-removebg.png" type="image/png">
 </head>
 <body>
 <div class="container d-flex justify-content-center align-items-center vh-100">
     <div class="card p-4 shadow" style="width: 100%; max-width: 400px;">
+        <h3 class="text-center mb-4 d-flex justify-content-center align-items-center">
+            <img src="/image/logo-removebg.png" style="height: 1.5em; margin-right: 8px; margin-left: -30px;" class="d-inline-block" />
+            E-mandaty
+        </h3>
         <h2 class="text-center mb-4">Zaloguj się</h2>
-        <form>
+        <form id="login-form">
             <div class="mb-3">
                 <label for="pesel" class="form-label">PESEL</label>
                 <input type="text" class="form-control" id="pesel" placeholder="Wpisz PESEL" maxlength="11">
@@ -26,11 +30,54 @@
                 <label for="password" class="form-label">Hasło</label>
                 <input type="password" class="form-control" id="password" placeholder="Wpisz hasło">
             </div>
-            <button type="submit" class="btn btn-primary w-100">Dalej</button>
+            <button type="button" class="btn btn-primary w-100" id="submit-button">Dalej</button>
         </form>
+        <div id="response-message" class="mt-3 alert alert-info d-none"></div>
     </div>
 </div>
 
+<script>
+    document.getElementById('submit-button').addEventListener('click', async () => {
+        const pesel = document.getElementById('pesel').value;
+        const password = document.getElementById('password').value;
 
+        const data = {
+            action: 'login',
+            pesel,
+            password
+        };
+
+        try {
+            const response = await fetch('http://192.168.1.10:8080/api', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            const responseData = await response.json();
+            const responseMessage = document.getElementById('response-message');
+
+            if (response.ok && responseData.message.includes('Poprawnie zalogowano')) {
+                // Zapisanie PESEL do sessionStorage
+                sessionStorage.setItem('pesel', pesel);
+
+                // Przekierowanie na main_page.html
+                window.location.href = '/html/main_page.html';
+            } else {
+                responseMessage.classList.remove('d-none', 'alert-info');
+                responseMessage.classList.add('alert-danger');
+                responseMessage.textContent = 'Błąd: ' + responseData.message;
+            }
+        } catch (error) {
+            const responseMessage = document.getElementById('response-message');
+            responseMessage.classList.remove('d-none', 'alert-info');
+            responseMessage.classList.add('alert-danger');
+            responseMessage.textContent = 'Błąd połączenia z serwerem!';
+            console.error('Error:', error);
+        }
+    });
+</script>
 </body>
 </html>

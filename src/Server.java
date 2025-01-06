@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 
 /**
@@ -126,36 +128,23 @@ public class Server {
         }
     }
 
-
-    private static void start_http() throws IOException{
+    private static void start_http() throws IOException {
         // Tworzenie serwera na porcie 8080
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
 
-        // Dodanie kontekstu dla strony głównej
-        server.createContext("/", new HtmlFileHandler());
-        server.createContext("/css", new StaticFileHandler("src/klient/css"));
-        server.createContext("/js", new StaticFileHandler("src/klient/js"));
-        server.createContext("/image", new StaticFileHandler("src/klient/image"));
+        // Obsługa plików statycznych
+        server.createContext("/", new StaticFileHandler("src/klient"));
+
+        // Obsługa API JSON
+        server.createContext("/api", new JsonHandler());
+
+        // Uruchomienie serwera
         server.setExecutor(null); // Domyślny executor
         server.start();
-        System.out.println("Serwer http działa na porcie 8080");
-
+        System.out.println("Serwer HTTP działa na http://192.168.1.10:8080");
     }
 
-    static class HtmlFileHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            byte[] response = Files.readAllBytes(Paths.get("src/klient/html/index.html"));
-
-            exchange.getResponseHeaders().add("Content-Type", "text/html; charset=UTF-8");
-            exchange.sendResponseHeaders(200, response.length);
-            OutputStream os = exchange.getResponseBody();
-            os.write(response);
-            os.close();
-        }
-    }
-
-    // Handler dla plików statycznych (CSS, JS)
+    // Handler dla plików statycznych
     static class StaticFileHandler implements HttpHandler {
         private final String basePath;
 
@@ -166,28 +155,169 @@ public class Server {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             String requestedPath = exchange.getRequestURI().getPath();
-            String filePath = basePath + requestedPath.replaceFirst("/(css|js|image)", "");
 
+            // Jeśli użytkownik żąda favicon
+            if (requestedPath.equals("/favicon.ico")) {
+                requestedPath = "/image/logo-removebg.png"; // Ustaw ścieżkę do pliku favicon
+            }
+
+            // Jeśli użytkownik wejdzie na "/", zwróć "index.html"
+            if (requestedPath.equals("/")) {
+                requestedPath = "/html/index.html";
+            }
+
+            // Tworzenie pełnej ścieżki do pliku
+            String filePath = basePath + requestedPath;
             File file = new File(filePath);
+
             if (file.exists() && !file.isDirectory()) {
-                // Określ odpowiedni typ MIME
+                // Odczytanie zawartości pliku
+                byte[] response = Files.readAllBytes(file.toPath());
+
+                // Ustalanie typu MIME
                 String contentType = Files.probeContentType(file.toPath());
                 if (contentType == null) {
-                    contentType = "application/octet-stream"; // Domyślny typ
+                    contentType = "application/octet-stream"; // Domyślny typ MIME
                 }
 
-                byte[] response = Files.readAllBytes(file.toPath());
+                // Wysyłanie nagłówków i treści
                 exchange.getResponseHeaders().add("Content-Type", contentType + "; charset=UTF-8");
                 exchange.sendResponseHeaders(200, response.length);
 
-                OutputStream os = exchange.getResponseBody();
-                os.write(response);
-                os.close();
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(response);
+                }
             } else {
-                exchange.sendResponseHeaders(404, -1); // Plik nie znaleziony
+                // Plik nie znaleziony
+                exchange.sendResponseHeaders(404, -1);
             }
         }
     }
+
+    // Handler dla API JSON
+    static class JsonHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String method = exchange.getRequestMethod();
+            String jsonResponse = null;
+
+            if ("POST".equalsIgnoreCase(method)) {
+                // Odczytanie treści żądania POST
+                String requestBody = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))
+                        .lines().collect(Collectors.joining("\n"));
+
+                Map<String, String> data = parseJson(requestBody); // Parsowanie JSON
+
+                String action = data.get("action"); // Pobranie wartości pola `action`
+                System.out.println("Wartość action: " + action);
+                if ("login".equalsIgnoreCase(action)) {
+                    String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+                    try (Connection connection = DriverManager.getConnection(dbURL)) {
+                        if (connection != null) {
+                            // Wyszukiwanie użytkownika w bazie danych
+                            PreparedStatement pstmt = connection.prepareStatement("SELECT driver.id, driver.pesel, driver.password FROM driver WHERE driver.pesel = ?");
+                            pstmt.setString(1, data.get("pesel"));
+                            ResultSet rs = pstmt.executeQuery();
+
+                            if (rs.next()) {
+                                String passwordFromDb = rs.getString("password");
+                                if (passwordFromDb != null && passwordFromDb.equals(data.get("password"))) {
+                                    jsonResponse = "{ \"message\": \"Poprawnie zalogowano\" }";
+                                } else {
+                                    jsonResponse = "{ \"message\": \"Podano złe hasło lub użytkownik nie istnieje\" }";
+                                }
+                            } else {
+                                jsonResponse = "{ \"message\": \"Podano złe hasło lub użytkownik nie istnieje\" }";
+                            }
+                        }
+                    } catch (SQLException e) {
+                        System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
+                        jsonResponse = "{ \"message\": \"Błąd wewnętrzny serwera\" }";
+                    }
+                } else if ("main_page".equalsIgnoreCase(action)) {
+                    // Odczytanie PESEL z treści żądania POST
+                    System.out.println("hhhh");
+                    String pesel = data.get("pesel");
+
+                    String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+                    try (Connection connection = DriverManager.getConnection(dbURL)) {
+                        if (connection != null) {
+                            // Zapytanie o bilety dla kierowcy na podstawie PESEL
+                            PreparedStatement pstmt = connection.prepareStatement(
+                                    "SELECT tickets.driver_name, tickets.offense, tickets.fine_amount, tickets.penalty_points, tickets.issue_date " +
+                                            "FROM tickets " +
+                                            "JOIN driver ON driver.pesel = tickets.pesel " +
+                                            "WHERE driver.pesel = ?"
+                            );
+                            pstmt.setString(1, pesel);
+                            ResultSet rs = pstmt.executeQuery();
+
+                            // Tworzenie odpowiedzi JSON z danymi o biletach
+                            StringBuilder ticketsJson = new StringBuilder("[");
+                            boolean hasTickets = false;
+                            while (rs.next()) {
+                                hasTickets = true;
+                                ticketsJson.append("{")
+                                        .append("\"driver_name\":\"").append(rs.getString("driver_name")).append("\",")
+                                        .append("\"offense\":\"").append(rs.getString("offense")).append("\",")
+                                        .append("\"fine_amount\":\"").append(rs.getDouble("fine_amount")).append("\",")
+                                        .append("\"penalty_points\":\"").append(rs.getInt("penalty_points")).append("\",")
+                                        .append("\"issue_date\":\"").append(rs.getString("issue_date")).append("\"")
+                                        .append("},");
+                            }
+                            if (hasTickets) {
+                                ticketsJson.deleteCharAt(ticketsJson.length() - 1); // Usuwamy ostatni przecinek
+                            }
+                            ticketsJson.append("]");
+                            jsonResponse = ticketsJson.toString();
+                            System.out.println("hhhh");
+                        }
+                    } catch (SQLException e) {
+                        System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
+                        jsonResponse = "{ \"message\": \"Błąd wewnętrzny serwera\" }";
+                    }
+                } else {
+                    jsonResponse = "{ \"message\": \"Podano złą metodę\" }";
+                }
+
+                // Ustawienie nagłówka odpowiedzi
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, jsonResponse.getBytes().length);
+
+                // Wysłanie odpowiedzi
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(jsonResponse.getBytes());
+                }
+            } else if ("GET".equalsIgnoreCase(method)) {
+                // Obsługa zapytań GET
+                 jsonResponse = "{ \"status\": \"API działa poprawnie\" }";
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, jsonResponse.getBytes().length);
+
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(jsonResponse.getBytes());
+                }
+            } else {
+                // Obsługa nieobsługiwanych metod
+                exchange.sendResponseHeaders(405, -1); // 405 Method Not Allowed
+            }
+        }
+
+
+
+        private Map<String, String> parseJson(String json) {
+            Map<String, String> data = new HashMap<>();
+            json = json.replace("{", "").replace("}", "").replace("\"", "");
+            String[] pairs = json.split(",");
+            for (String pair : pairs) {
+                String[] keyValue = pair.split(":");
+                data.put(keyValue[0].trim(), keyValue[1].trim());
+            }
+            return data;
+        }
+    }
+
+
 
 
     /**
