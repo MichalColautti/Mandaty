@@ -1,0 +1,31 @@
+/* styles.css */
+body {
+    background-color: #f8f9fa; /* Jasne tło dla lepszej czytelności */
+    font-family: 'Arial', sans-serif;
+}
+.favicon {
+    width: 32px; /* Ustaw rozmiar ikony */
+    height: 32px;
+    border-radius: 50%; /* Zaokrąglenie, tworzy efekt okręgu */
+}
+
+
+
+.card {
+    border-radius: 10px; /* Zaokrąglone krawędzie */
+}
+
+.btn-primary {
+    background-color: #bbb9b9;
+    border-color: #9a9a9a;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+    border-color: #004085;
+}
+
+.form-control:focus {
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+    border-color: #007bff;
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="PL-pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>e-Mandaty</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="../css/bootstrap.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="../css/style.css">
+    <!-- Bootstrap JS -->
+    <script src="../js/bootstrap.bundle.js"></script>
+    <!--Logo-->
+    <link rel="icon" href="/image/logo-removebg.png" type="image/png">
+
+    <style>
+        .ticket {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            word-wrap: break-word;  /* Zawijanie długich słów */
+            overflow-wrap: break-word;  /* Umożliwia zawijanie */
+            word-break: break-word; /* Łamanie długich słów */
+            white-space: normal; /* Domyślny sposób zawijania */
+        }
+
+        #tickets-container {
+            max-height: 400px;  /* Maksymalna wysokość */
+            overflow-y: auto;   /* Przewijanie pionowe */
+        }
+    </style>
+</head>
+<body>
+<div class="container d-flex justify-content-center align-items-center vh-100">
+    <div class="card p-4 shadow" style="width: 100%; max-width: 400px;">
+        <h3 class="text-center mb-4 d-flex justify-content-center align-items-center">
+            <img src="/image/logo-removebg.png" style="height: 1.5em; margin-right: 8px; margin-left: -30px;" class="d-inline-block" />
+            E-mandaty
+        </h3>
+        <div id="tickets-container">
+            <h3 class="text-center mb-4">Ładowanie mandatów...</h3>
+        </div>
+        <script src="../js/main_page.js"></script>
+
+    </div>
+</div>
+
+</body>
+</html>
