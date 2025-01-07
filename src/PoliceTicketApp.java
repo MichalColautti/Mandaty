@@ -27,13 +27,14 @@ public class PoliceTicketApp extends Application {
      */
     private String serviceNumber;
 
-
+    /**
+     * Stała z adresem ip serwera
+     */
     private final String host_ip = "192.168.1.10";
+
     /**
      * klasa reprezentująca wykroczenia ich widełki ilościowe punktów karnych, widełki cenowe oraz czy podlegają recydywie.
      */
-
-
     private static class Offense {
         private final int penaltyPointsMin;
         private final int penaltyPointsMax;

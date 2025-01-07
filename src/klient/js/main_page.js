@@ -1,8 +1,11 @@
-
+/**
+ * Obsługa wyświetlania mandatów przez klienta w main_page
+ */
 document.addEventListener('DOMContentLoaded', () => {
     const pesel = sessionStorage.getItem('pesel');
     if (!pesel) {
-        window.location.href = '/'; // Przekierowanie na login, jeśli brak PESEL
+        // Przekierowanie do strony głównej przy braku numeru Pesel
+        window.location.href = '/';
         return;
     }
 

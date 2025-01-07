@@ -14,9 +14,30 @@ import java.util.stream.Collectors;
 
 
 /**
- * Klasa będąca serwerem
+ * Klasa będąca serwerem http dla kierowców oraz obsługująca zapytania aplikacji policjanta
  */
 public class Server {
+
+    /**
+     * Stała zawierająca adres ip serwera
+     */
+    private final static String host_ip ="192.168.1.10";
+
+    /**
+     * Stała zawierająca port do obługi aplikacji policjanta
+     */
+    private final static int port_police = 12345;
+
+    /**
+     * Stała zawierająca port do obługi aplikacji klienta
+     */
+    private final static int port_klient = 8080;
+
+    /**
+     * Stała zaweierająca adres do bazy danych
+     */
+    private final static String dburl = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+
     /**
      * Metoda łączy się z bazą danych na oddzielnej maszynie poprzez udostępniany w sieci folder,
      * po czym wyświetla wszystkie rekordy z tabeli users.
@@ -24,6 +45,7 @@ public class Server {
      * Jeżeli zalogować to sprawdza, czy dane istnieją w bazie danych.
      * Jeżeli wystawić mandat to wystawia mandat.
      * Jeżeli anulować mandat to usuwa mandat.
+     * Dodatkowo uruchamia serwer http
      */
     public static void main(String[] args) {
         try{
@@ -32,41 +54,12 @@ public class Server {
             System.out.println("Błąd uruchomienia serwera hhtp: " + e.getMessage());
         }
 
-
-        //String dbURL = "jdbc:sqlite:Z:/identifier.sqlite";
-        String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
         try {
-            Connection connection = DriverManager.getConnection(dbURL);
-
+            Connection connection = DriverManager.getConnection(dburl);
             if (connection != null) {
-                //wyprintowanie wszystkich danych w bazie danych users (mozna usunąć później)
-                Statement stmt = connection.createStatement();
-                ResultSet rs = stmt.executeQuery("SELECT * FROM users");
-
-                System.out.println("ID | Service Number | Password");
-
-                while (rs.next()) {
-                    int id = rs.getInt("id");
-                    String serviceNumber = rs.getString("service_number");
-                    String password = rs.getString("password");
-
-                    System.out.println(id + " | " + serviceNumber + " | " + password);
-                }
-
-                rs = stmt.executeQuery("SELECT * FROM driver");
-
-                System.out.println("ID | Pesel | Password");
-
-                while (rs.next()) {
-                    int id = rs.getInt("id");
-                    String pesel = rs.getString("pesel");
-                    String password = rs.getString("password");
-                    System.out.println(id + " | " + pesel + " | " + password);
-                }
-
                 //uruchamianie serwera
-                try (ServerSocket serverSocket = new ServerSocket(12345)) {
-                    System.out.println("Serwer JavaFx uruchomiony na porcie " + 12345);
+                try (ServerSocket serverSocket = new ServerSocket(port_police)) {
+                    System.out.println("Serwer JavaFx uruchomiony na porcie " + port_police);
                     while (true) {
                         try (Socket clientSocket = serverSocket.accept();
                              BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
@@ -144,9 +137,13 @@ public class Server {
         }
     }
 
+    /**
+     * Metoda statyczna uruchamiająca serwer http
+     * @throws IOException wyrzcuca błąd IOException
+     */
     private static void start_http() throws IOException {
-        // Tworzenie serwera na porcie 8080
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        // Urochomienie serwera na porcie port_klient
+        HttpServer server = HttpServer.create(new InetSocketAddress(host_ip,port_klient), 0);
 
         // Obsługa plików statycznych
         server.createContext("/", new StaticFileHandler("src/klient"));
@@ -155,26 +152,40 @@ public class Server {
         server.createContext("/api", new JsonHandler());
 
         // Uruchomienie serwera
-        server.setExecutor(null); // Domyślny executor
+        server.setExecutor(null);
         server.start();
-        System.out.println("Serwer HTTP działa na http://192.168.1.10:8080");
+        System.out.println("Serwer HTTP działa na http://"+host_ip+":"+port_klient);
     }
 
-    // Handler dla plików statycznych
+    /**
+     * Metoda do obługi plików, które są używane do aplikacji klienta
+     */
     static class StaticFileHandler implements HttpHandler {
+        /**
+         * Ścieżka do do katalogu głównego klienta
+         */
         private final String basePath;
 
+        /**
+         * Konstrucktor klasy StaticFileHandler
+         * @param basePath Ścieżka do do katalogu głównego klienta
+         */
         public StaticFileHandler(String basePath) {
             this.basePath = basePath;
         }
 
+        /**
+         * Metoda obługująca wymianę danych między klient oraz serwerem
+         * @param exchange wymiana zawierająca żądanie od klienta i służąca do wysłania odpowiedzi
+         * @throws IOException wyrzcuca błąd IOException
+         */
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             String requestedPath = exchange.getRequestURI().getPath();
 
             // Jeśli użytkownik żąda favicon
             if (requestedPath.equals("/favicon.ico")) {
-                requestedPath = "/image/logo-removebg.png"; // Ustaw ścieżkę do pliku favicon
+                requestedPath = "/image/logo-removebg.png";
             }
 
             // Jeśli użytkownik wejdzie na "/", zwróć "index.html"
@@ -193,7 +204,7 @@ public class Server {
                 // Ustalanie typu MIME
                 String contentType = Files.probeContentType(file.toPath());
                 if (contentType == null) {
-                    contentType = "application/octet-stream"; // Domyślny typ MIME
+                    contentType = "application/octet-stream";
                 }
 
                 // Wysyłanie nagłówków i treści
@@ -210,7 +221,9 @@ public class Server {
         }
     }
 
-    // Handler dla API JSON
+    /**
+     * Metoda obługująca wymianę danych z serwera do klienta przez Jsona
+     */
     static class JsonHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -221,29 +234,33 @@ public class Server {
                 // Odczytanie treści żądania POST
                 String requestBody = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))
                         .lines().collect(Collectors.joining("\n"));
+                // Parsowanie JSON
+                Map<String, String> data = parseJson(requestBody);
 
-                Map<String, String> data = parseJson(requestBody); // Parsowanie JSON
-
-                String action = data.get("action"); // Pobranie wartości pola `action`
+                // Pobieranie akcji od Jsona
+                String action = data.get("action");
                 System.out.println("Wartość action: " + action);
                 if ("login".equalsIgnoreCase(action)) {
-                    String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
-                    try (Connection connection = DriverManager.getConnection(dbURL)) {
+                    try (Connection connection = DriverManager.getConnection(dburl)) {
                         if (connection != null) {
                             // Wyszukiwanie użytkownika w bazie danych
                             PreparedStatement pstmt = connection.prepareStatement("SELECT driver.id, driver.pesel, driver.password FROM driver WHERE driver.pesel = ?");
                             pstmt.setString(1, data.get("pesel"));
                             ResultSet rs = pstmt.executeQuery();
 
+                            // Pobranie danych z bazy danych
                             if (rs.next()) {
                                 String passwordFromDb = rs.getString("password");
                                 if (passwordFromDb != null && passwordFromDb.equals(data.get("password"))) {
                                     jsonResponse = "{ \"message\": \"Poprawnie zalogowano\" }";
+                                    System.out.println("Poprawnie zalogowano użytkownika:"+rs.getString("pesel"));
                                 } else {
                                     jsonResponse = "{ \"message\": \"Podano złe hasło lub użytkownik nie istnieje\" }";
+                                    System.out.println("Błedna próba zalogowania użytkowniaka (złe hasło):"+rs.getString("pesel"));
                                 }
                             } else {
                                 jsonResponse = "{ \"message\": \"Podano złe hasło lub użytkownik nie istnieje\" }";
+                                System.out.println("Błedna próba zalogowania użytkowniaka (nie istnieje):"+rs.getString("pesel"));
                             }
                         }
                     } catch (SQLException e) {
@@ -252,11 +269,9 @@ public class Server {
                     }
                 } else if ("main_page".equalsIgnoreCase(action)) {
                     // Odczytanie PESEL z treści żądania POST
-                    System.out.println("hhhh");
                     String pesel = data.get("pesel");
 
-                    String dbURL = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
-                    try (Connection connection = DriverManager.getConnection(dbURL)) {
+                    try (Connection connection = DriverManager.getConnection(dburl)) {
                         if (connection != null) {
                             // Zapytanie o bilety dla kierowcy na podstawie PESEL
                             PreparedStatement pstmt = connection.prepareStatement(
@@ -286,7 +301,6 @@ public class Server {
                             }
                             ticketsJson.append("]");
                             jsonResponse = ticketsJson.toString();
-                            System.out.println("hhhh");
                         }
                     } catch (SQLException e) {
                         System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
@@ -304,23 +318,18 @@ public class Server {
                 try (OutputStream os = exchange.getResponseBody()) {
                     os.write(jsonResponse.getBytes());
                 }
-            } else if ("GET".equalsIgnoreCase(method)) {
-                // Obsługa zapytań GET
-                 jsonResponse = "{ \"status\": \"API działa poprawnie\" }";
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, jsonResponse.getBytes().length);
-
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(jsonResponse.getBytes());
-                }
-            } else {
+            }  else {
                 // Obsługa nieobsługiwanych metod
                 exchange.sendResponseHeaders(405, -1); // 405 Method Not Allowed
             }
         }
 
 
-
+        /**
+         * Metoda służaca zamiany zapytanie Json na Mapę Stringów
+         * @param json zapytanie Json
+         * @return Mapa przekonwertowanego Jsona
+         */
         private Map<String, String> parseJson(String json) {
             Map<String, String> data = new HashMap<>();
             json = json.replace("{", "").replace("}", "").replace("\"", "");
