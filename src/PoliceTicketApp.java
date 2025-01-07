@@ -27,9 +27,13 @@ public class PoliceTicketApp extends Application {
      */
     private String serviceNumber;
 
+
+    private final String host_ip = "192.168.1.10";
     /**
      * klasa reprezentująca wykroczenia ich widełki ilościowe punktów karnych, widełki cenowe oraz czy podlegają recydywie.
      */
+
+
     private static class Offense {
         private final int penaltyPointsMin;
         private final int penaltyPointsMax;
@@ -374,7 +378,7 @@ public class PoliceTicketApp extends Application {
      * @return zwraca false dla niepoprawnych danych logowania lub true dla poprawnych
      */
     private boolean authenticate(String serviceNumber, String password) {
-        try (Socket socket = new Socket("192.168.1.55", 12345);
+        try (Socket socket = new Socket(host_ip, 12345);
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
@@ -404,7 +408,7 @@ public class PoliceTicketApp extends Application {
      * @return true jeśli uda się wstawić dane do bazy danych, false jeśli się nie uda
      */
     private boolean submitTicket(String driver, String pesel, String offense, String fine, String penaltyPoints) {
-        try (Socket socket = new Socket("192.168.1.55", 12345);
+        try (Socket socket = new Socket(host_ip, 12345);
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
@@ -495,7 +499,7 @@ public class PoliceTicketApp extends Application {
      * @return zwraca true, jeżeli uda się anulować mandat, false, jeżeli się nie powiedzie
      */
     private boolean cancelTicket(String id) {
-        try (Socket socket = new Socket("192.168.1.55", 12345);
+        try (Socket socket = new Socket(host_ip, 12345);
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
