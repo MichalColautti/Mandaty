@@ -16,5 +16,11 @@ CREATE TABLE tickets (
     FOREIGN KEY (issued_by) REFERENCES users (id)
 );
 
+CREATE TABLE driver(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pesel TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL
+);
+
 --insert into users values (1,'123nypd','pass');
 --select * from tickets;
