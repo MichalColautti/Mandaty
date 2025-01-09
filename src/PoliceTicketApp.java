@@ -8,8 +8,8 @@ import javafx.stage.Stage;
 
 import java.io.*;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Objects;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Główna klasa aplikacji do wystawiania mandatów przez policję.
@@ -30,7 +30,7 @@ public class PoliceTicketApp extends Application {
     /**
      * Stała z adresem ip serwera
      */
-    private final String host_ip = "192.168.1.10";
+    private static final String host_ip = "172.20.10.3";
 
     /**
      * klasa reprezentująca wykroczenia ich widełki ilościowe punktów karnych, widełki cenowe oraz czy podlegają recydywie.
@@ -101,18 +101,37 @@ public class PoliceTicketApp extends Application {
     static HashMap<String,Offense> offenses = new HashMap<>();
 
     /**
-     * dodaje do mapy offenses możliwe wykroczenia ich klamerki punktów karnych oraz klamerki wysokości mandatu.
+     * Pobiera od serwera dane wykroczeń po czym dodaje do mapy offenses - możliwe wykroczenia,
+     * ich klamerki punktów karnych oraz klamerki wysokości mandatu.
      */
     public static void addOffenses() {
-        //https://www.prawo.pl/prawnicy-sady/taryfikator-mandatow-dla-kierowcow-na-2024-r,525390.html
-        offenses.put("Przekroczenie prędkości do 10", new Offense(1,1, 50, 50, false));
-        offenses.put("Przekroczenie prędkości o 11-15", new Offense(2,2, 100, 100, false));
-        offenses.put("Przekroczenie prędkości o 16-20", new Offense(3,3, 200, 200, false));
-        offenses.put("Przekroczenie prędkości o 31-40", new Offense(9,9, 800, 800, true));
+        try (Socket socket = new Socket(host_ip, 12345);  // Połączenie z serwerem
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
-        offenses.put("Nieprawidłowe parkowanie", new Offense(1,7, 100, 1200, false));
-        offenses.put("Przejazd na czerwonym świetle", new Offense(15,15, 500, 500, true));
-        offenses.put("Brak pasów bezpieczeństwa", new Offense(5,5, 100, 100, false));
+            // Wysłanie zapytania o wykroczenia
+            out.println("getOffenses");
+
+            String line;
+            while ((line = in.readLine()) != null) {
+                if (line.equals("END")) break; // Koniec transmisji danych
+
+                String[] data = line.split(",");
+                if (data.length == 6) {
+                    String name = data[0];
+                    int penaltyPointsMin = Integer.parseInt(data[1]);
+                    int penaltyPointsMax = Integer.parseInt(data[2]);
+                    int fineMin = Integer.parseInt(data[3]);
+                    int fineMax = Integer.parseInt(data[4]);
+                    boolean isRecidivist = Boolean.parseBoolean(data[5]);
+
+                    Offense offense = new Offense(penaltyPointsMin, penaltyPointsMax, fineMin, fineMax, isRecidivist);
+                    offenses.put(name, offense);
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Błąd połączenia z serwerem: " + e.getMessage());
+        }
     }
 
     /**
@@ -131,6 +150,7 @@ public class PoliceTicketApp extends Application {
     @Override
     public void start(Stage primaryStage) {
         addOffenses();
+
         this.mainStage = primaryStage;
         primaryStage.setTitle("Aplikacja Policjanta");
 
@@ -229,6 +249,7 @@ public class PoliceTicketApp extends Application {
         Label offenseLabel = new Label("Wykroczenie:");
         ComboBox<String> offenseInput = new ComboBox<>();
         offenseInput.getItems().addAll(offenses.keySet());
+        System.out.println("Elementy ComboBox: " + offenseInput.getItems().size());
 
         Label fineLabel = new Label("Kwota mandatu:");
         TextField fineInput = new TextField();

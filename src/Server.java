@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -21,7 +23,7 @@ public class Server {
     /**
      * Stała zawierająca adres ip serwera
      */
-    private final static String host_ip ="192.168.1.10";
+    private final static String host_ip = "192.168.1.10";
 
     /**
      * Stała zawierająca port do obługi aplikacji policjanta
@@ -36,21 +38,24 @@ public class Server {
     /**
      * Stała zaweierająca adres do bazy danych
      */
-    private final static String dburl = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+    //private final static String dburl = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+    private final static String dburl = "jdbc:sqlite:C:\\Users\\User\\DataGripProjects\\Mandaty\\identifier.sqlite";
+
 
     /**
      * Metoda łączy się z bazą danych na oddzielnej maszynie poprzez udostępniany w sieci folder,
      * po czym wyświetla wszystkie rekordy z tabeli users.
      * Pobiera linie od aplikacji policjanta i rozpoznaje czy policjant chce się zalogować, czy chce wystawić mandat.
      * Jeżeli zalogować to sprawdza, czy dane istnieją w bazie danych.
+     * Jeżeli getOffenses to pobiera wykroczenia z bazy danych a pożniej wysyła je do aplikacji policjanta.
      * Jeżeli wystawić mandat to wystawia mandat.
      * Jeżeli anulować mandat to usuwa mandat.
      * Dodatkowo uruchamia serwer http
      */
     public static void main(String[] args) {
-        try{
+        try {
             start_http();
-        }catch (IOException e){
+        } catch (IOException e) {
             System.out.println("Błąd uruchomienia serwera hhtp: " + e.getMessage());
         }
 
@@ -73,17 +78,19 @@ public class Server {
 
                             String serviceNumber;
                             switch (credentials[0]) {
+                                case "getOffenses":
+                                    sendOffenses(out, connection);
+                                    break;
                                 case "auth":
                                     serviceNumber = credentials[1];
                                     String password = credentials[2];
-                                    boolean authenticated = authenticate(connection,serviceNumber, password);
+                                    boolean authenticated = authenticate(connection, serviceNumber, password);
 
                                     // Odpowiedź
-                                    if( authenticated) {
+                                    if (authenticated) {
                                         String response = "true";
                                         out.println(response);
-                                    }
-                                    else {
+                                    } else {
                                         String response = "false";
                                         out.println(response);
                                     }
@@ -98,11 +105,10 @@ public class Server {
                                     int createdTicketId = createTicket(connection, driver, pesel, offense, fine, penaltyPoints, serviceNumber);
 
                                     // Odpowiedź
-                                    if(createdTicketId > 0) {
+                                    if (createdTicketId > 0) {
                                         String response = "true," + createdTicketId;
                                         out.println(response);
-                                    }
-                                    else {
+                                    } else {
                                         String response = "false";
                                         out.println(response);
                                     }
@@ -112,11 +118,10 @@ public class Server {
                                     boolean cancelled = cancelTicket(connection, id);
 
                                     // Odpowiedź
-                                    if(cancelled) {
+                                    if (cancelled) {
                                         String response = "true";
                                         out.println(response);
-                                    }
-                                    else {
+                                    } else {
                                         String response = "false";
                                         out.println(response);
                                     }
@@ -139,11 +144,12 @@ public class Server {
 
     /**
      * Metoda statyczna uruchamiająca serwer http
+     *
      * @throws IOException wyrzcuca błąd IOException
      */
     private static void start_http() throws IOException {
         // Urochomienie serwera na porcie port_klient
-        HttpServer server = HttpServer.create(new InetSocketAddress(host_ip,port_klient), 0);
+        HttpServer server = HttpServer.create(new InetSocketAddress(host_ip, port_klient), 0);
 
         // Obsługa plików statycznych
         server.createContext("/", new StaticFileHandler("src/klient"));
@@ -154,7 +160,7 @@ public class Server {
         // Uruchomienie serwera
         server.setExecutor(null);
         server.start();
-        System.out.println("Serwer HTTP działa na http://"+host_ip+":"+port_klient);
+        System.out.println("Serwer HTTP działa na http://" + host_ip + ":" + port_klient);
     }
 
     /**
@@ -168,6 +174,7 @@ public class Server {
 
         /**
          * Konstrucktor klasy StaticFileHandler
+         *
          * @param basePath Ścieżka do do katalogu głównego klienta
          */
         public StaticFileHandler(String basePath) {
@@ -176,6 +183,7 @@ public class Server {
 
         /**
          * Metoda obługująca wymianę danych między klient oraz serwerem
+         *
          * @param exchange wymiana zawierająca żądanie od klienta i służąca do wysłania odpowiedzi
          * @throws IOException wyrzcuca błąd IOException
          */
@@ -253,14 +261,14 @@ public class Server {
                                 String passwordFromDb = rs.getString("password");
                                 if (passwordFromDb != null && passwordFromDb.equals(data.get("password"))) {
                                     jsonResponse = "{ \"message\": \"Poprawnie zalogowano\" }";
-                                    System.out.println("Poprawnie zalogowano użytkownika:"+rs.getString("pesel"));
+                                    System.out.println("Poprawnie zalogowano użytkownika:" + rs.getString("pesel"));
                                 } else {
                                     jsonResponse = "{ \"message\": \"Podano złe hasło lub użytkownik nie istnieje\" }";
-                                    System.out.println("Błedna próba zalogowania użytkowniaka (złe hasło):"+rs.getString("pesel"));
+                                    System.out.println("Błedna próba zalogowania użytkowniaka (złe hasło):" + rs.getString("pesel"));
                                 }
                             } else {
                                 jsonResponse = "{ \"message\": \"Podano złe hasło lub użytkownik nie istnieje\" }";
-                                System.out.println("Błedna próba zalogowania użytkowniaka (nie istnieje):"+rs.getString("pesel"));
+                                System.out.println("Błedna próba zalogowania użytkowniaka (nie istnieje):" + rs.getString("pesel"));
                             }
                         }
                     } catch (SQLException e) {
@@ -318,7 +326,7 @@ public class Server {
                 try (OutputStream os = exchange.getResponseBody()) {
                     os.write(jsonResponse.getBytes());
                 }
-            }  else {
+            } else {
                 // Obsługa nieobsługiwanych metod
                 exchange.sendResponseHeaders(405, -1); // 405 Method Not Allowed
             }
@@ -327,6 +335,7 @@ public class Server {
 
         /**
          * Metoda służaca zamiany zapytanie Json na Mapę Stringów
+         *
          * @param json zapytanie Json
          * @return Mapa przekonwertowanego Jsona
          */
@@ -343,13 +352,12 @@ public class Server {
     }
 
 
-
-
     /**
      * Funkcja sprawdzająca dane logowania czy znajdują się w bazie danych
-     * @param connection miejsce pliku z bazą danych
+     *
+     * @param connection    miejsce pliku z bazą danych
      * @param serviceNumber login policjanta
-     * @param password hasło policjanta
+     * @param password      hasło policjanta
      * @return zwraca true, jeśli podane dane znajdują się w bazie danych lub false, jeśli się nie znajdują w bazie danych
      */
 
@@ -362,7 +370,7 @@ public class Server {
 
             try (ResultSet rs = statement.executeQuery()) {
                 // Jeśli wynik istnieje, dane logowania są poprawne
-                if(rs.next()) {
+                if (rs.next()) {
                     return true;
                 }
             }
@@ -375,11 +383,11 @@ public class Server {
     /**
      * Funkcja tworząca w bazie danych mandat.
      *
-     * @param connection miejsce pliku z bazą danych
-     * @param driver imię kierowcy
-     * @param pesel pesel kierowcy
-     * @param offense wykroczenie popełnione
-     * @param fine grzywna
+     * @param connection    miejsce pliku z bazą danych
+     * @param driver        imię kierowcy
+     * @param pesel         pesel kierowcy
+     * @param offense       wykroczenie popełnione
+     * @param fine          grzywna
      * @param penaltyPoints ilość punktów karnych
      * @param serviceNumber numer służbowy policjanta
      * @return zwraca true, jeżeli uda się zinsertować dane do bazy danych, jeżeli się nie uda zwraca false
@@ -396,7 +404,7 @@ public class Server {
             statement.setString(6, serviceNumber);
 
             int rows = statement.executeUpdate();
-            if(rows > 0) {
+            if (rows > 0) {
                 try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
                     if (generatedKeys.next()) {
                         return generatedKeys.getInt(1); // Zwraca ID mandatu
@@ -413,7 +421,7 @@ public class Server {
      * Funkcja usuwa mandat z bazy danych.
      *
      * @param connection miejsce pliku z bazą danych
-     * @param id id mandatu do anulowania
+     * @param id         id mandatu do anulowania
      * @return True, jeśli powiedzie się anulowanie mandatu, false, jeśli się nie powiedzie.
      */
     private static boolean cancelTicket(Connection connection, String id) {
@@ -423,12 +431,42 @@ public class Server {
             statement.setString(1, id);
 
             int rows = statement.executeUpdate();
-            if(rows > 0) {
+            if (rows > 0) {
                 return true;
             }
         } catch (SQLException e) {
             System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
         }
         return false;
+    }
+
+    /**
+     * Metoda ta wykonuje zapytanie do bazy danych, pobiera dane o wykroczeniach (nazwa, punkty karne, grzywna, recydywa)
+     * i przesyła je do klienta. Każde wykroczenie jest przesyłane w osobnej linii w formacie CSV.
+     * Na końcu transmisji danych wysyłany jest komunikat "END", który oznacza koniec transmisji wykroczeń.
+     *
+     * @param out Strumień wyjściowy, przez który dane są wysyłane do klienta.
+     * @param connection Miejsce pliku z bazą danych.
+     */
+    private static void sendOffenses(PrintWriter out, Connection connection) {
+        String query = "SELECT * FROM offenses";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            while (rs.next()) {
+                String offenseData = rs.getString("name") + "," +
+                        rs.getInt("penalty_points_min") + "," +
+                        rs.getInt("penalty_points_max") + "," +
+                        rs.getInt("fine_min") + "," +
+                        rs.getInt("fine_max") + "," +
+                        rs.getBoolean("is_recidivist");
+
+                out.println(offenseData);
+            }
+            out.println("END"); // Oznaczenie końca transmisji danych
+
+        } catch (SQLException e) {
+            System.out.println("Błąd podczas ładowania wykroczeń: " + e.getMessage());
+        }
     }
 }
