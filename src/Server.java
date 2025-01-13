@@ -8,12 +8,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
+import org.json.*;
 
 /**
  * Klasa będąca serwerem http dla kierowców oraz obsługująca zapytania aplikacji policjanta
@@ -23,12 +21,7 @@ public class Server {
     /**
      * Stała zawierająca adres ip serwera
      */
-    private final static String host_ip = "192.168.1.10";
-
-    /**
-     * Stała zawierająca port do obługi aplikacji policjanta
-     */
-    private final static int port_police = 12345;
+    private final static String host_ip = "localhost";
 
     /**
      * Stała zawierająca port do obługi aplikacji klienta
@@ -43,102 +36,13 @@ public class Server {
 
 
     /**
-     * Metoda łączy się z bazą danych na oddzielnej maszynie poprzez udostępniany w sieci folder,
-     * po czym wyświetla wszystkie rekordy z tabeli users.
-     * Pobiera linie od aplikacji policjanta i rozpoznaje czy policjant chce się zalogować, czy chce wystawić mandat.
-     * Jeżeli zalogować to sprawdza, czy dane istnieją w bazie danych.
-     * Jeżeli getOffenses to pobiera wykroczenia z bazy danych a pożniej wysyła je do aplikacji policjanta.
-     * Jeżeli wystawić mandat to wystawia mandat.
-     * Jeżeli anulować mandat to usuwa mandat.
-     * Dodatkowo uruchamia serwer http
+     * Metoda uruchamia serwer http
      */
     public static void main(String[] args) {
         try {
             start_http();
         } catch (IOException e) {
             System.out.println("Błąd uruchomienia serwera hhtp: " + e.getMessage());
-        }
-
-        try {
-            Connection connection = DriverManager.getConnection(dburl);
-            if (connection != null) {
-                //uruchamianie serwera
-                try (ServerSocket serverSocket = new ServerSocket(port_police)) {
-                    System.out.println("Serwer JavaFx uruchomiony na porcie " + port_police);
-                    while (true) {
-                        try (Socket clientSocket = serverSocket.accept();
-                             BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
-
-                            String request = in.readLine();
-                            System.out.println("Otrzymano dane: " + request);
-
-                            // Sprawdzanie danych logowania
-                            String[] credentials = request.split(",");
-
-                            String serviceNumber;
-                            switch (credentials[0]) {
-                                case "getOffenses":
-                                    sendOffenses(out, connection);
-                                    break;
-                                case "auth":
-                                    serviceNumber = credentials[1];
-                                    String password = credentials[2];
-                                    boolean authenticated = authenticate(connection, serviceNumber, password);
-
-                                    // Odpowiedź
-                                    if (authenticated) {
-                                        String response = "true";
-                                        out.println(response);
-                                    } else {
-                                        String response = "false";
-                                        out.println(response);
-                                    }
-                                    break;
-                                case "ticket":
-                                    String driver = credentials[1];
-                                    String pesel = credentials[2];
-                                    String offense = credentials[3];
-                                    String fine = credentials[4];
-                                    String penaltyPoints = credentials[5];
-                                    serviceNumber = credentials[6];
-                                    int createdTicketId = createTicket(connection, driver, pesel, offense, fine, penaltyPoints, serviceNumber);
-
-                                    // Odpowiedź
-                                    if (createdTicketId > 0) {
-                                        String response = "true," + createdTicketId;
-                                        out.println(response);
-                                    } else {
-                                        String response = "false";
-                                        out.println(response);
-                                    }
-                                    break;
-                                case "cancel":
-                                    String id = credentials[1];
-                                    boolean cancelled = cancelTicket(connection, id);
-
-                                    // Odpowiedź
-                                    if (cancelled) {
-                                        String response = "true";
-                                        out.println(response);
-                                    } else {
-                                        String response = "false";
-                                        out.println(response);
-                                    }
-
-                                    break;
-                            }
-
-                        } catch (IOException e) {
-                            System.out.println("Błąd podczas komunikacji z klientem: " + e.getMessage());
-                        }
-                    }
-                } catch (IOException e) {
-                    System.out.println("Błąd uruchomienia serwera: " + e.getMessage());
-                }
-            }
-        } catch (SQLException e) {
-            System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
         }
     }
 
@@ -150,12 +54,17 @@ public class Server {
     private static void start_http() throws IOException {
         // Urochomienie serwera na porcie port_klient
         HttpServer server = HttpServer.create(new InetSocketAddress(host_ip, port_klient), 0);
-
         // Obsługa plików statycznych
         server.createContext("/", new StaticFileHandler("src/klient"));
 
         // Obsługa API JSON
         server.createContext("/api", new JsonHandler());
+
+        // Obłusga API dla funkcjonalnośći aplikacji policjanta
+        server.createContext("/api/login", new LoginHandler());
+        server.createContext("/api/offences", new OffencesHandler());
+        server.createContext("/api/createTicket", new CreateTicketHandler());
+        server.createContext("/api/cancelTicket", new CancelTicketHandler());
 
         // Uruchomienie serwera
         server.setExecutor(null);
@@ -351,122 +260,386 @@ public class Server {
         }
     }
 
-
-    /**
-     * Funkcja sprawdzająca dane logowania czy znajdują się w bazie danych
-     *
-     * @param connection    miejsce pliku z bazą danych
-     * @param serviceNumber login policjanta
-     * @param password      hasło policjanta
-     * @return zwraca true, jeśli podane dane znajdują się w bazie danych lub false, jeśli się nie znajdują w bazie danych
-     */
-
-    private static boolean authenticate(Connection connection, String serviceNumber, String password) {
-        String query = "SELECT * FROM users WHERE service_number = ? AND password = ?";
-
-        try (PreparedStatement statement = connection.prepareStatement(query)) {
-            statement.setString(1, serviceNumber);
-            statement.setString(2, password);
-
-            try (ResultSet rs = statement.executeQuery()) {
-                // Jeśli wynik istnieje, dane logowania są poprawne
-                if (rs.next()) {
-                    return true;
-                }
+    private static String readInputStream(InputStream inputStream) throws IOException {
+        StringBuilder stringBuilder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                stringBuilder.append(line);
             }
-        } catch (SQLException e) {
-            System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
         }
-        return false;
+        return stringBuilder.toString();
     }
 
     /**
-     * Funkcja tworząca w bazie danych mandat.
-     *
-     * @param connection    miejsce pliku z bazą danych
-     * @param driver        imię kierowcy
-     * @param pesel         pesel kierowcy
-     * @param offense       wykroczenie popełnione
-     * @param fine          grzywna
-     * @param penaltyPoints ilość punktów karnych
-     * @param serviceNumber numer służbowy policjanta
-     * @return zwraca true, jeżeli uda się zinsertować dane do bazy danych, jeżeli się nie uda zwraca false
+     * Obsługuje żądanie logowania użytkownika, sprawdza poprawność danych logowania w bazie danych.
+     * Sprawdza, czy numer służbowy i hasło są zgodne z danymi w bazie danych.
      */
-    private static int createTicket(Connection connection, String driver, String pesel, String offense, String fine, String penaltyPoints, String serviceNumber) {
-        String query = "INSERT INTO tickets (driver_name, pesel, offense, fine_amount, penalty_points,issued_by) values (?,?,?,?,?,?)";
+    static class LoginHandler implements HttpHandler {
+        /**
+         * Obsługuje żądanie logowania. Odczytuje dane i sprawdza czy zgadzają się z tymi
+         * w bazie danych i zwraca odpowiednią odpowiedź JSON.
+         *
+         * @param exchange Obiekt HttpExchange zawierający informacje o żądaniu i odpowiedzi.
+         * @throws IOException Jeśli wystąpi błąd podczas przetwarzania żądania lub wysyłania odpowiedzi.
+         */
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            InputStream inputStream = exchange.getRequestBody();
+            String requestBody = readInputStream(inputStream);
+            System.out.println("Otrzymano żądanie logowania: " + requestBody);
 
-        try (PreparedStatement statement = connection.prepareStatement(query)) {
-            statement.setString(1, driver);
-            statement.setString(2, pesel);
-            statement.setString(3, offense);
-            statement.setString(4, fine);
-            statement.setString(5, penaltyPoints);
-            statement.setString(6, serviceNumber);
+            LoginCredentials credentials = parseJson(requestBody);
 
-            int rows = statement.executeUpdate();
-            if (rows > 0) {
-                try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getInt(1); // Zwraca ID mandatu
+            String query = "SELECT * FROM users WHERE service_number = ? AND password = ?";
+
+            try (Connection connection = DriverManager.getConnection(dburl)) {
+                if (connection != null) {
+                    try (PreparedStatement statement = connection.prepareStatement(query)) {
+                        statement.setString(1, credentials.getServiceNumber());
+                        statement.setString(2, credentials.getPassword());
+
+                        try (ResultSet rs = statement.executeQuery()) {
+                            JSONObject jsonResponse = new JSONObject();
+
+                            if (rs.next()) {
+                                // Użytkownik znaleziony i dane logowania są poprawne
+                                jsonResponse.put("success", true);
+                                jsonResponse.put("message", "Zalogowano pomyślnie");
+                            } else {
+                                // Użytkownik nie znaleziony ale dane logowania są niepoprawne
+                                jsonResponse.put("success", false);
+                                jsonResponse.put("message", "Nieprawidłowe dane logowania");
+                            }
+
+                            exchange.getResponseHeaders().set("Content-Type", "application/json");
+                            // Wysyłanie odpowiedzi
+                            String response = jsonResponse.toString();
+                            exchange.sendResponseHeaders(200, response.getBytes().length);
+
+                            OutputStream os = exchange.getResponseBody();
+                            os.write(response.getBytes());
+                            os.close();
+                        }
+                    } catch (SQLException e) {
+                        System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
                     }
                 }
+            } catch (SQLException e) {
+                System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
             }
-        } catch (SQLException e) {
-            System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
         }
-        return -1;
+
+        /**
+         * Parsuje dane JSON i tworzy obiekt LoginCredentials.
+         *
+         * @param json Ciało żądania w formacie JSON.
+         * @return Obiekt LoginCredentials zawierający dane logowania.
+         */
+        private LoginCredentials parseJson(String json) {
+            JSONObject jsonObject = new JSONObject(json);
+            String serviceNumber = jsonObject.getString("serviceNumber");
+            String password = jsonObject.getString("password");
+
+            LoginCredentials credentials = new LoginCredentials();
+            credentials.setServiceNumber(serviceNumber);
+            credentials.setPassword(password);
+
+            return credentials;
+        }
+
+        /**
+         * Klasa reprezentująca dane logowania użytkownika.
+         * Zawiera numer służbowy i hasło.
+         */
+        public static class LoginCredentials {
+            private String serviceNumber;
+            private String password;
+
+            /**
+             * Zwraca numer służbowy użytkownika.
+             *
+             * @return Numer służbowy.
+             */
+            public String getServiceNumber() {
+                return serviceNumber;
+            }
+
+            /**
+             * Ustawia numer służbowy użytkownika.
+             *
+             * @param serviceNumber Numer służbowy.
+             */
+            public void setServiceNumber(String serviceNumber) {
+                this.serviceNumber = serviceNumber;
+            }
+
+            /**
+             * Zwraca hasło użytkownika.
+             *
+             * @return Hasło użytkownika.
+             */
+            public String getPassword() {
+                return password;
+            }
+
+            /**
+             * Ustawia hasło użytkownika.
+             *
+             * @param password Hasło użytkownika.
+             */
+            public void setPassword(String password) {
+                this.password = password;
+            }
+        }
     }
 
     /**
-     * Funkcja usuwa mandat z bazy danych.
-     *
-     * @param connection miejsce pliku z bazą danych
-     * @param id         id mandatu do anulowania
-     * @return True, jeśli powiedzie się anulowanie mandatu, false, jeśli się nie powiedzie.
+     * Obsługuje żądanie dotyczące pobrania wykroczeń z bazy danych.
+     * Wykonuje zapytanie do bazy danych, pobiera informacje o wykroczeniach i zwraca te dane w odpowiedzi w formacie JSON.
      */
-    private static boolean cancelTicket(Connection connection, String id) {
-        String query = "DELETE FROM tickets WHERE id = ?";
+    public static class OffencesHandler implements HttpHandler {
 
-        try (PreparedStatement statement = connection.prepareStatement(query)) {
-            statement.setString(1, id);
+        /**
+         * Obsługuje żądanie pobrania wykroczeń. Wykonuje zapytanie do bazy danych,
+         * aby uzyskać listę wykroczeń, a następnie zwraca ją w odpowiedzi w formacie JSON.
+         *
+         * @param exchange Obiekt HttpExchange zawierający informacje o żądaniu i odpowiedzi.
+         * @throws IOException Jeśli wystąpi błąd podczas przetwarzania żądania lub wysyłania odpowiedzi.
+         */
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            InputStream inputStream = exchange.getRequestBody();
+            String requestBody = readInputStream(inputStream);
 
-            int rows = statement.executeUpdate();
-            if (rows > 0) {
-                return true;
+            String query = "SELECT * FROM offenses";
+
+            JSONObject responseJson = new JSONObject();
+            JSONArray offencesArray = new JSONArray();
+
+            try (Connection connection = DriverManager.getConnection(dburl)) {
+                if (connection != null) {
+                    try (Statement stmt = connection.createStatement();
+                         ResultSet rs = stmt.executeQuery(query)) {
+
+                        while (rs.next()) {
+                            JSONObject offences = new JSONObject();
+                            offences.put("id", rs.getInt("id"));
+                            offences.put("name", rs.getString("name"));
+                            offences.put("penalty_points_min", rs.getInt("penalty_points_min"));
+                            offences.put("penalty_points_max", rs.getInt("penalty_points_max"));
+                            offences.put("fine_min", rs.getInt("fine_min"));
+                            offences.put("fine_max", rs.getInt("fine_max"));
+                            offences.put("is_recidivist", rs.getBoolean("is_recidivist"));
+
+                            offencesArray.put(offences);
+                        }
+
+                        responseJson.put("offences", offencesArray);
+
+                    } catch (SQLException e) {
+                        System.out.println("Błąd podczas ładowania wykroczeń: " + e.getMessage());
+                        exchange.sendResponseHeaders(500, 0);
+                        OutputStream os = exchange.getResponseBody();
+                        os.write("{\"error\": \"Błąd podczas ładowania wykroczeń\"}".getBytes());
+                        os.close();
+                        return;
+                    }
+                }
+            } catch (SQLException e) {
+                System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
+                exchange.sendResponseHeaders(500, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("{\"error\": \"Błąd połączenia z bazą danych\"}".getBytes());
+                os.close();
+                return;
             }
-        } catch (SQLException e) {
-            System.out.println("Błąd podczas sprawdzania danych logowania: " + e.getMessage());
+
+            // Wysyłanie poprawnej odpowiedzi HTTP 200
+            String response = responseJson.toString();
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.getBytes().length);
+
+            // Wysłanie odpowiedzi
+            OutputStream os = exchange.getResponseBody();
+            os.write(response.getBytes());
+            os.close();
         }
-        return false;
     }
 
     /**
-     * Metoda ta wykonuje zapytanie do bazy danych, pobiera dane o wykroczeniach (nazwa, punkty karne, grzywna, recydywa)
-     * i przesyła je do klienta. Każde wykroczenie jest przesyłane w osobnej linii w formacie CSV.
-     * Na końcu transmisji danych wysyłany jest komunikat "END", który oznacza koniec transmisji wykroczeń.
-     *
-     * @param out Strumień wyjściowy, przez który dane są wysyłane do klienta.
-     * @param connection Miejsce pliku z bazą danych.
+     * Obsługuje żądanie utworzenia nowego mandatu. Odczytuje dane z żądania w formacie JSON,
+     * zapisuje te dane do bazy danych i zwraca odpowiedź z numerem wygenerowanego mandatu.
      */
-    private static void sendOffenses(PrintWriter out, Connection connection) {
-        String query = "SELECT * FROM offenses";
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(query)) {
+    public static class CreateTicketHandler implements HttpHandler {
 
-            while (rs.next()) {
-                String offenseData = rs.getString("name") + "," +
-                        rs.getInt("penalty_points_min") + "," +
-                        rs.getInt("penalty_points_max") + "," +
-                        rs.getInt("fine_min") + "," +
-                        rs.getInt("fine_max") + "," +
-                        rs.getBoolean("is_recidivist");
-
-                out.println(offenseData);
+        /**
+         * Obsługuje żądanie tworzenia nowego mandatu. Odczytuje dane z ciała żądania,
+         * wykonuje zapytanie SQL w celu zapisania mandatu do bazy danych i zwraca odpowiedź zawierającą ID mandatu.
+         *
+         * @param exchange Obiekt HttpExchange zawierający informacje o żądaniu i odpowiedzi.
+         * @throws IOException Jeśli wystąpi błąd podczas odczytu danych wejściowych lub wysyłania odpowiedzi.
+         */
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!exchange.getRequestMethod().equalsIgnoreCase("POST")) {
+                exchange.sendResponseHeaders(405, -1); // Metoda nieobsługiwana
+                return;
             }
-            out.println("END"); // Oznaczenie końca transmisji danych
 
-        } catch (SQLException e) {
-            System.out.println("Błąd podczas ładowania wykroczeń: " + e.getMessage());
+            InputStream inputStream = exchange.getRequestBody();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, "utf-8"));
+            StringBuilder requestBody = new StringBuilder();
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                requestBody.append(line);
+            }
+            reader.close();
+
+            JSONObject jsonRequest = new JSONObject(requestBody.toString());
+            String driver = jsonRequest.getString("driver");
+            String pesel = jsonRequest.getString("pesel");
+            String offense = jsonRequest.getString("offense");
+            int fine = jsonRequest.getInt("fine");
+            int penaltyPoints = jsonRequest.getInt("penaltyPoints");
+            String serviceNumber = jsonRequest.getString("serviceNumber");
+
+            // Zapytanie SQL do zapisania mandatu w bazie danych
+            String insertQuery = "INSERT INTO tickets (driver_name, pesel, offense, fine_amount, penalty_points, issued_by) VALUES (?, ?, ?, ?, ?, ?)";
+            int generatedTicketId = -1;
+
+            try (Connection connection = DriverManager.getConnection(dburl)) {
+                if (connection != null) {
+                    try (PreparedStatement stmt = connection.prepareStatement(insertQuery, Statement.RETURN_GENERATED_KEYS)) {
+                        stmt.setString(1, driver);
+                        stmt.setString(2, pesel);
+                        stmt.setString(3, offense);
+                        stmt.setInt(4, fine);
+                        stmt.setInt(5, penaltyPoints);
+                        stmt.setString(6, serviceNumber);
+
+                        int affectedRows = stmt.executeUpdate();
+                        if (affectedRows > 0) {
+                            ResultSet rs = stmt.getGeneratedKeys();
+                            if (rs.next()) {
+                                generatedTicketId = rs.getInt(1);
+                            }
+                        }
+                    } catch (SQLException e) {
+                        System.out.println("Błąd SQL: " + e.getMessage());
+                    }
+                }
+            } catch (SQLException e) {
+                System.out.println("Błąd połączenia z bazą danych: " + e.getMessage());
+            }
+
+            // Przygotowanie odpowiedzi JSON
+            JSONObject jsonResponse = new JSONObject();
+            if (generatedTicketId != -1) {
+                jsonResponse.put("success", true);
+                jsonResponse.put("ticketId", generatedTicketId);
+            } else {
+                jsonResponse.put("success", false);
+            }
+
+            // Wysłanie odpowiedzi
+            String response = jsonResponse.toString();
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length());
+            OutputStream os = exchange.getResponseBody();
+            os.write(response.getBytes());
+            os.close();
+        }
+    }
+
+    /**
+     * Obsługuje anulowanie mandatu na podstawie podanego ID. Odczytuje dane z żądania i
+     * wykonuje zapytanie SQL aby usunąć mandat z bazy danych i zwraca odpowiedź JSON
+     * wskazującą, czy operacja anulowania zakończyła się powodzeniem.
+     */
+    public static class CancelTicketHandler implements HttpHandler {
+
+        /**
+         * Obsługuje żądanie anulowania mandatu.
+         * Odczytuje dane wejściowe, wykonuje zapytanie SQL w celu anulowania mandatu
+         * i zwraca odpowiedź informującą o wyniku operacji.
+         *
+         * @param exchange Obiekt HttpExchange zawierający informacje o żądaniu i odpowiedzi.
+         * @throws IOException Jeśli wystąpi błąd podczas odczytu danych wejściowych lub wysyłania odpowiedzi.
+         */
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+//            System.out.println("handler object = " + this);
+//            System.out.println("called by thread = " + Thread.currentThread());
+//            exchange.getResponseHeaders().set("Connection", "close");
+//            System.out.println("Received request with ID: " + exchange.hashCode());
+//            System.out.println("Request method: " + exchange.getRequestMethod());
+//            System.out.println("Thread: " + Thread.currentThread().getName());
+
+            if (!exchange.getRequestMethod().equalsIgnoreCase("POST")) {
+                exchange.sendResponseHeaders(405, -1); // Metoda nieobsługiwana
+                return;
+            }
+
+            StringBuilder requestBody = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody(), "utf-8"))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    requestBody.append(line);
+                }
+            }
+            //System.out.println("Received request body: " + requestBody);
+
+            JSONObject jsonRequest = new JSONObject(requestBody.toString());
+            int ticketId = jsonRequest.getInt("ticketId");
+
+            // Zapytanie SQL do anulowania mandatu w bazie danych
+            String deleteQuery = "DELETE FROM tickets WHERE id = ?";
+            boolean success = false;
+
+            try (Connection connection = DriverManager.getConnection(dburl)) {
+                if (connection != null) {
+                    try (PreparedStatement stmt = connection.prepareStatement(deleteQuery)) {
+                        stmt.setInt(1, ticketId);
+                        int affectedRows = stmt.executeUpdate();
+                        System.out.println("Rows deleted: " + affectedRows);
+                        if (affectedRows > 0) {
+                            success = true; // Mandat został anulowany
+                        }
+                    } catch (SQLException e) {
+                        System.out.println("SQL error: " + e.getMessage());
+                    }
+                }
+            } catch (SQLException e) {
+                System.out.println("Database connection error: " + e.getMessage());
+            }
+
+            // Przygotowanie odpowiedzi JSON
+            JSONObject jsonResponse = new JSONObject();
+            if (success) {
+                jsonResponse.put("success", true);
+                jsonResponse.put("message", "Mandat został anulowany.");
+            } else {
+                jsonResponse.put("success", false);
+                jsonResponse.put("message", "Mandat o podanym ID nie istnieje.");
+            }
+
+            //System.out.println("Prepared JSON response: " + jsonResponse);
+
+            // Wysłanie odpowiedzi
+            String response = jsonResponse.toString();
+            byte[] bs = response.getBytes("UTF-8");
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bs.length);
+
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bs);
+                System.out.println("Response sent successfully.");
+            } catch (IOException e) {
+                System.out.println("Error while writing response: " + e.getMessage());
+                exchange.sendResponseHeaders(500, -1);
+            }
         }
     }
 }

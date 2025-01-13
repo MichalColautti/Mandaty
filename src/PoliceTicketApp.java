@@ -7,9 +7,13 @@ import javafx.scene.layout.GridPane;
 import javafx.stage.Stage;
 
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.Socket;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
+
+import org.json.*;
 
 /**
  * Główna klasa aplikacji do wystawiania mandatów przez policję.
@@ -30,7 +34,9 @@ public class PoliceTicketApp extends Application {
     /**
      * Stała z adresem ip serwera
      */
-    private static final String host_ip = "172.20.10.3";
+    private static final String host_ip = "localhost";
+
+    private static final String SERVER_URL = "http://localhost:8080/api";
 
     /**
      * klasa reprezentująca wykroczenia ich widełki ilościowe punktów karnych, widełki cenowe oraz czy podlegają recydywie.
@@ -105,25 +111,44 @@ public class PoliceTicketApp extends Application {
      * ich klamerki punktów karnych oraz klamerki wysokości mandatu.
      */
     public static void addOffenses() {
-        try (Socket socket = new Socket(host_ip, 12345);  // Połączenie z serwerem
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+        try {
+            URL url = new URL(SERVER_URL + "/offences");
 
-            // Wysłanie zapytania o wykroczenia
-            out.println("getOffenses");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Accept", "application/json");
 
+            int status = connection.getResponseCode();
+
+            if (status != HttpURLConnection.HTTP_OK) {
+                System.out.println("Błąd połączenia z serwerem. Kod odpowiedzi: " + status);
+                return;
+            }
+
+            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder responseBuilder = new StringBuilder();
             String line;
             while ((line = in.readLine()) != null) {
-                if (line.equals("END")) break; // Koniec transmisji danych
+                responseBuilder.append(line);
+            }
 
-                String[] data = line.split(",");
-                if (data.length == 6) {
-                    String name = data[0];
-                    int penaltyPointsMin = Integer.parseInt(data[1]);
-                    int penaltyPointsMax = Integer.parseInt(data[2]);
-                    int fineMin = Integer.parseInt(data[3]);
-                    int fineMax = Integer.parseInt(data[4]);
-                    boolean isRecidivist = Boolean.parseBoolean(data[5]);
+            in.close();
+
+            JSONObject jsonResponse = new JSONObject(responseBuilder.toString());
+
+            // Sprawdzamy, czy odpowiedź zawiera tablicę wykroczeń
+            if (jsonResponse.has("offences")) {
+                JSONArray offensesArray = jsonResponse.getJSONArray("offences");
+
+                for (int i = 0; i < offensesArray.length(); i++) {
+                    JSONObject offenseObject = offensesArray.getJSONObject(i);
+
+                    String name = offenseObject.getString("name");
+                    int penaltyPointsMin = offenseObject.getInt("penalty_points_min");
+                    int penaltyPointsMax = offenseObject.getInt("penalty_points_max");
+                    int fineMin = offenseObject.getInt("fine_min");
+                    int fineMax = offenseObject.getInt("fine_max");
+                    boolean isRecidivist = offenseObject.getBoolean("is_recidivist");
 
                     Offense offense = new Offense(penaltyPointsMin, penaltyPointsMax, fineMin, fineMax, isRecidivist);
                     offenses.put(name, offense);
@@ -133,6 +158,7 @@ public class PoliceTicketApp extends Application {
             System.out.println("Błąd połączenia z serwerem: " + e.getMessage());
         }
     }
+
 
     /**
      * Metoda główna aplikacji, która uruchamia aplikację JavaFX.
@@ -149,8 +175,6 @@ public class PoliceTicketApp extends Application {
      */
     @Override
     public void start(Stage primaryStage) {
-        addOffenses();
-
         this.mainStage = primaryStage;
         primaryStage.setTitle("Aplikacja Policjanta");
 
@@ -202,6 +226,7 @@ public class PoliceTicketApp extends Application {
             }
             else {
                 if (authenticate(serviceNumber, password)) {
+                    addOffenses();
                     ticketScene();
                 } else {
                     showAlert("Błąd logowania", "Nieprawidłowy numer służbowy lub hasło.");
@@ -249,7 +274,6 @@ public class PoliceTicketApp extends Application {
         Label offenseLabel = new Label("Wykroczenie:");
         ComboBox<String> offenseInput = new ComboBox<>();
         offenseInput.getItems().addAll(offenses.keySet());
-        System.out.println("Elementy ComboBox: " + offenseInput.getItems().size());
 
         Label fineLabel = new Label("Kwota mandatu:");
         TextField fineInput = new TextField();
@@ -393,26 +417,45 @@ public class PoliceTicketApp extends Application {
     }
 
     /**
-     * funkcja wysyła do serwera login i hasło i czeka na ocene czy są poprawne
+     * funkcja wysyła do serwera login i hasło w formacie json i czeka na ocene czy są poprawne
      *
      * @param serviceNumber numer policjanta (login)
      * @param password hasło
      * @return zwraca false dla niepoprawnych danych logowania lub true dla poprawnych
      */
     private boolean authenticate(String serviceNumber, String password) {
-        try (Socket socket = new Socket(host_ip, 12345);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        try {
+            URL url = new URL(SERVER_URL + "/login");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
 
-            // Wysyłanie danych logowania, na początku auth aby serwer wiedział ze chodzi o autoryzację
-            String loginData = "auth," + serviceNumber + "," + password;
-            out.println(loginData);
+            JSONObject json = new JSONObject();
+            json.put("serviceNumber", serviceNumber);
+            json.put("password", password);
+
+            // Wysłanie danych do serwera
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = json.toString().getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
 
             // Odbieranie odpowiedzi z serwera
-            String response = in.readLine();
-            System.out.println("Odpowiedź z serwera: " + response);
+            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = in.readLine()) != null) {
+                response.append(line);
+            }
+            in.close();
 
-            return response.contains("true");
+            System.out.println("response: " + response.toString());
+
+            JSONObject jsonResponse = new JSONObject(response.toString());
+            return jsonResponse.optBoolean("success", false);
+
         } catch (IOException e) {
             System.out.println("Błąd komunikacji z serwerem: " + e.getMessage());
             return false;
@@ -429,31 +472,42 @@ public class PoliceTicketApp extends Application {
      * @param penaltyPoints ilość punktów karnych
      * @return true jeśli uda się wstawić dane do bazy danych, false jeśli się nie uda
      */
-    private boolean submitTicket(String driver, String pesel, String offense, String fine, String penaltyPoints) {
-        try (Socket socket = new Socket(host_ip, 12345);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+    public boolean submitTicket(String driver, String pesel, String offense, String fine, String penaltyPoints) {
+        try {
+            URL url = new URL(SERVER_URL + "/createTicket");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
 
-            // Wysyłanie danych logowania, na początku ticket aby serwer wiedział ze chodzi o wystawienie mandatu
-            String ticketData = "ticket," + driver + "," + pesel + "," + offense + "," + fine + "," + penaltyPoints + "," + serviceNumber;
-            out.println(ticketData);
+            JSONObject ticketData = new JSONObject();
+            ticketData.put("driver", driver);
+            ticketData.put("pesel", pesel);
+            ticketData.put("offense", offense);
+            ticketData.put("fine", fine);
+            ticketData.put("penaltyPoints", penaltyPoints);
+            ticketData.put("serviceNumber", serviceNumber);
 
-            // Odbieranie odpowiedzi z serwera
-            String response = in.readLine();
-            String[] parts = response.split(",");
-            System.out.println("Odpowiedź z serwera: " + response);
-            if(response.startsWith("true")) {
-                showAlert("Sukces", "Mandat o id: " + parts[1] + " został wystawiony.");
-                return true;
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = ticketData.toString().getBytes("utf-8");
+                os.write(input, 0, input.length);
             }
-            else {
-                showAlert("Błąd", "Wystąpił problem podczas wystawiania mandatu.");
-                return false;
+
+            int status = connection.getResponseCode();
+            if (status == HttpURLConnection.HTTP_OK) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"));
+                String response = in.readLine();
+                JSONObject jsonResponse = new JSONObject(response);
+                if (jsonResponse.getBoolean("success")) {
+                    showAlert("Sukces", "Mandat o ID: " + jsonResponse.getInt("ticketId") + " został wystawiony.");
+                    return true;
+                }
             }
-        } catch (IOException e) {
+            showAlert("Błąd", "Nie udało się wystawić mandatu.");
+        } catch (IOException | JSONException e) {
             System.out.println("Błąd komunikacji z serwerem: " + e.getMessage());
-            return false;
         }
+        return false;
     }
 
     /**
@@ -517,27 +571,57 @@ public class PoliceTicketApp extends Application {
     /**
      * Funkcja wysyła do serwera id mandatu który ma być anulowany.
      *
-     * @param id id mandatu do anulowania
+     * @param ticketId id mandatu do anulowania
      * @return zwraca true, jeżeli uda się anulować mandat, false, jeżeli się nie powiedzie
      */
-    private boolean cancelTicket(String id) {
-        try (Socket socket = new Socket(host_ip, 12345);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+    private boolean cancelTicket(String ticketId) {
+        //System.out.println("cancelTicket() called at: " + System.currentTimeMillis());
+        HttpURLConnection connection = null;
+        try {
+            JSONObject ticketData = new JSONObject();
+            ticketData.put("ticketId", ticketId);
 
-            // na początku cancel aby serwer wiedział ze chodzi o anulowanie mandatu
-            String cancelData = "cancel," + id;
-            out.println(cancelData);
+            HttpURLConnection.setFollowRedirects(false);
+            System.setProperty("sun.net.http.retryPost", "false");
 
-            // Odbieranie odpowiedzi z serwera
-            String response = in.readLine();
-            System.out.println("Odpowiedź z serwera: " + response);
+            URL url = new URL(SERVER_URL + "/cancelTicket");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Expect", "");
+            connection.setRequestProperty("Connection", "close");
+            System.setProperty("http.keepAlive", "false");
 
-            return response.contains("true");
-        } catch (IOException e) {
-            System.out.println("Błąd komunikacji z serwerem: " + e.getMessage());
-            return false;
+            connection.setDoOutput(true);
+
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = ticketData.toString().getBytes("utf-8");
+                os.write(input, 0, input.length);
+                os.flush();
+                os.close();
+            }
+
+            // Odczytanie odpowiedzi z serwera
+            int status = connection.getResponseCode();
+            //System.out.println("Response Code: " + status);
+
+            if (status == HttpURLConnection.HTTP_OK) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"));
+                String response = in.readLine();
+                JSONObject jsonResponse = new JSONObject(response);
+
+                return jsonResponse.getBoolean("success");
+            } else {
+                showAlert("Błąd", "Wystąpił problem podczas komunikacji z serwerem.");
+            }
+        } catch (IOException | JSONException e) {
+            showAlert("Błąd", "XD Wystąpił błąd podczas anulowania mandatu: " + e.getMessage());
+        }finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
+        return false;
     }
 
     /**
