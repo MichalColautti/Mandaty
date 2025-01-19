@@ -21,7 +21,7 @@ public class Server {
     /**
      * Stała zawierająca adres ip serwera
      */
-    private final static String host_ip = "localhost";
+    private final static String host_ip = "192.168.1.10";
 
     /**
      * Stała zawierająca port do obługi aplikacji klienta
@@ -31,8 +31,8 @@ public class Server {
     /**
      * Stała zaweierająca adres do bazy danych
      */
-    //private final static String dburl = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
-    private final static String dburl = "jdbc:sqlite:C:\\Users\\User\\DataGripProjects\\Mandaty\\identifier.sqlite";
+    private final static String dburl = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+    //private final static String dburl = "jdbc:sqlite:C:\\Users\\User\\DataGripProjects\\Mandaty\\identifier.sqlite";
 
 
     /**
