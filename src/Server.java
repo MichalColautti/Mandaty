@@ -1,5 +1,4 @@
 import java.io.*;
-import java.net.*;
 import java.sql.*;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
@@ -21,7 +20,7 @@ public class Server {
     /**
      * Stała zawierająca adres ip serwera
      */
-    private final static String host_ip = "192.168.1.10";
+    private final static String host_ip = "172.20.10.7";
 
     /**
      * Stała zawierająca port do obługi aplikacji klienta
@@ -31,7 +30,7 @@ public class Server {
     /**
      * Stała zaweierająca adres do bazy danych
      */
-    private final static String dburl = "jdbc:sqlite:C:\\Users\\igor1\\DataGripProjects\\mandaty\\identifier.sqlite";
+    private final static String dburl = "jdbc:sqlite:Z:\\identifier.sqlite";
     //private final static String dburl = "jdbc:sqlite:C:\\Users\\User\\DataGripProjects\\Mandaty\\identifier.sqlite";
 
 
@@ -259,6 +258,13 @@ public class Server {
             return data;
         }
     }
+
+    /**
+     *  Funkcja czyta strumień i wstawia go do jednego Stringa
+     * @param inputStream strumień danych
+     * @return Zwraca string zbudowany z strumienia danych
+     * @throws IOException zwraca błąd IOEcxeption
+     */
 
     private static String readInputStream(InputStream inputStream) throws IOException {
         StringBuilder stringBuilder = new StringBuilder();

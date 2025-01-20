@@ -8,7 +8,6 @@ import javafx.stage.Stage;
 
 import java.io.*;
 import java.net.HttpURLConnection;
-import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -32,10 +31,8 @@ public class PoliceTicketApp extends Application {
     private String serviceNumber;
 
     /**
-     * Stała z adresem ip serwera
+     * Zmienna zawierająca adres url serwera
      */
-    private static final String host_ip = "localhost";
-
     private static final String SERVER_URL = "http://localhost:8080/api";
 
     /**
